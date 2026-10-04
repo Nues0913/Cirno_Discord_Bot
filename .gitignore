@@ -4,3 +4,9 @@ node_modules
 
 /src/generated/prisma
 logs
+/data/
+/dist/
+/assets/*
+!/assets/songs/
+/assets/songs/*
+!/assets/songs/README.md
