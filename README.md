@@ -1,8 +1,11 @@
-# Discord Bot
+# Cirno Discord Bot
+
+Cirno Discord Bot 是一個 Discord 機器人，提供偵測語音頻道福音傳播(爛音樂)、本地音樂播放器、音樂資料庫串聯、複製文管理，以及 線上語言模型串聯功能。
+
 
 ## 安裝與啟動
 
-使用 Linux／WSL 版 Node.js 22.12 以上（建議 Node 24）。在 WSL 中確認 `node -p 'process.platform'` 顯示 `linux`，`which node npm` 不應指向 `/mnt/c/Program Files/nodejs`。
+使用 Node.js 22.12 以上版本
 
 ```bash
 npm ci
@@ -10,13 +13,21 @@ npm run build
 npm start
 ```
 
-開發時執行 `npm run dev`；執行自動化測試使用 `npm test`。`npm start build` 只會傳入啟動參數，編譯需使用 `npm run build`。
+開發時執行 `npm run dev`；執行自動化測試使用 `npm test`。
 
-`.env` 至少需有 `TOKEN`（Bot token）與 `CLIENT_ID`（應用程式 ID）。`TESTER_ID` 可指定允許執行 `!reload` 的使用者。Bot 會在啟動時註冊全域斜線指令，新指令可能需要稍候才出現。
+`.env` 至少需有 `TOKEN`（Discord Bot token）與 `CLIENT_ID`（應用程式 ID）
+```dotenv
+TOKEN=your_discord_bot_token
+CLIENT_ID=your_discord_application_id
+TESTER_ID=your_discord_user_id
+NVIDIA_API_KEY=your_nvidia_api_key
+TAVILY_API_KEY=your_tavily_api_key
+```
+
 
 ## 本地音樂播放器
 
-將音檔放入 Bot 主機的 `assets/songs/`，加入一般語音頻道後使用 `/music play song:歌曲`。播放器透過 FFmpeg 解碼本地音檔，不提供網路串流、歌詞或網頁管理介面。
+將音檔放入 Bot 主機的 `assets/songs/`，加入一般語音頻道後使用 `/music play song:歌曲`。播放器透過 FFmpeg 解碼本地音檔。
 
 | 指令 | 用途 |
 | --- | --- |
@@ -42,29 +53,43 @@ npm start
 
 手動工作階段期間（包含暫停與連線中），該伺服器的進場音樂觸發會暫時略過；結束後恢復監聽新的進場事件，不補播。不同伺服器互相獨立，手動點歌不改變進場曲序。
 
-可選設定：
-
-```dotenv
-# 手動播放器曲庫；與進場音樂的 VOICE_AUDIO_DIRECTORY 分開設定
-MUSIC_AUDIO_DIRECTORY=assets/songs
-```
-
 曲庫僅掃描目錄第一層，支援 `.webm`、`.opus`、`.ogg`、`.m4a`、`.mp3`、`.wav`。讀取標題、演出者與時長；缺少標籤時使用檔名。新增、移除或修改音檔後，等檔案複製完成再執行 `/music reload`。更新後重新開啟曲庫選單或輸入點歌搜尋，即可看到最新歌曲。Bot 啟動時會掃描一次，運行中不監聽目錄，也不定期補查；多人同時執行 reload 會共用同一次進行中的掃描。拒絕指向曲庫外的符號連結，不接受使用者輸入任意檔案路徑。
 
 Bot 在語音頻道需要「查看頻道」「連線」「說話」；面板所在文字頻道需要「查看頻道」「傳送訊息」「嵌入連結」，討論串則需傳送討論串訊息權限。初版支援一般語音頻道，不支援 Stage 頻道或私訊播放。
 
-## 語音頻道進場音效
 
-Bot 預設會監聽語音頻道 `1129866175514427506`、`1129866175514427505`、`1497652462914371674`、`1463930158497923258`、`1536416730786562148`。真人成員進入其中任一頻道時，Bot 會加入並從頭播放進場音效；播放期間若又有人進入，Bot 會先離開、重新加入，再從頭播放。音檔播完後 Bot 會自動離開並繼續監聽。
+## 偵測語音頻道福音傳播
 
-歌曲請放在 `assets/songs/`。程式會依檔名排序並逐首循環播放；例如 `01-intro.mp3`、`02-theme.mp3`、`03-ending.mp3`，播放到最後一首後會回到第一首。支援 `.webm`、`.opus`、`.ogg`、`.m4a`、`.mp3`、`.wav`。可選設定：
+在 `.env` 的 `VOICE_CHANNEL_IDS` 設定要監聽的語音頻道 ID，以逗號分隔。未設定時不監聽任何頻道。真人成員進入其中任一頻道時，Bot 會加入並從頭播放進場音效；播放期間若又有人進入，Bot 會先離開、重新加入，再從頭播放。音檔播完後 Bot 會自動離開並繼續監聽。
 
+歌曲請放在 `assets/songs/`。程式會依檔名排序並逐首循環播放。支援 `.webm`、`.opus`、`.ogg`、`.m4a`、`.mp3`、`.wav`。
+
+可選設定：
 ```dotenv
-VOICE_CHANNEL_IDS=1129866175514427506,1129866175514427505,1497652462914371674
+VOICE_CHANNEL_IDS=your_channel_id,your_channel2_id,...
 VOICE_AUDIO_DIRECTORY=assets/songs
 ```
 
-程式已啟用 `GuildVoiceStates` gateway intent；Bot 在目標頻道需要「查看頻道」、「連線」與「說話」權限。
+## 音樂資料庫串聯
+
+building...
+
+
+## 複製文管理
+
+複製文儲存在 Bot 主機的 `data/copyessay.json`。使用下列斜線指令查詢或管理。
+
+新增及刪除後，資料會直接寫入 `data/copyessay.json`。
+
+| 指令 | 用途 |
+| --- | --- |
+| `/copyessay random` | 隨機顯示一則複製文；`silent:true` 可設為僅自己可見 |
+| `/copyessay search query:關鍵字` | 搜尋相關複製文，私下顯示最多 10 筆結果及其 ID、相關度 |
+| `/copyessay id id:編號` | 依 ID 顯示複製文；`silent:true` 可設為僅自己可見 |
+| `/copymanager add` | 開啟表單，輸入標題與內容以新增複製文 |
+| `/copymanager delete id:編號` | 刪除指定 ID 的複製文 |
+| `/copymanager list` | 私下列出所有複製文 |
+
 
 ## NVIDIA NIM / GPT-OSS 20B + 聯網搜尋
 
@@ -119,3 +144,4 @@ NVIDIA_NIM_SYSTEM_PROMPT=You are a helpful Discord assistant.
 # 若使用自行部署的 NIM，可覆寫 API URL
 NVIDIA_NIM_URL=https://integrate.api.nvidia.com/v1/chat/completions
 ```
+

@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'fs/promises';
+import { mkdir, readFile, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -20,6 +20,7 @@ async function readAll(): Promise<CopyEssay[]> {
 }
 
 async function writeAll(essays: CopyEssay[]): Promise<void> {
+    await mkdir(path.dirname(DATA_PATH), { recursive: true });
     await writeFile(DATA_PATH, JSON.stringify(essays, null, 2), 'utf-8');
 }
 

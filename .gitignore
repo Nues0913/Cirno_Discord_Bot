@@ -6,4 +6,7 @@ node_modules
 logs
 /data/
 /dist/
-/assets/
+/assets/*
+!/assets/songs/
+/assets/songs/*
+!/assets/songs/README.md

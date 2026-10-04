@@ -10,7 +10,6 @@ import { voiceSessions, type VoiceLease } from './voiceSessionManager.js';
 import { AUDIO_EXTENSIONS } from './localMusicLibrary.js';
 import { createLocalAudio } from './localAudio.js';
 
-const DEFAULT_CHANNEL_IDS = ['1129866175514427506', '1129866175514427505', '1497652462914371674', '1463930158497923258', '1536416730786562148'];
 function findAudioFiles(): string[] {
     const directory = resolve(process.env.VOICE_AUDIO_DIRECTORY?.trim() || 'assets/songs');
     if (!existsSync(directory)) return [];
@@ -21,7 +20,7 @@ function findAudioFiles(): string[] {
 }
 export function registerVoiceEntrancePlayer(client: Client): void {
     const configured = process.env.VOICE_CHANNEL_IDS?.split(',').map(id => id.trim()).filter(Boolean);
-    const channelIds = new Set(configured?.length ? configured : DEFAULT_CHANNEL_IDS);
+    const channelIds = new Set(configured ?? []);
     const lastFiles = new Map<string, string>();
     const start = async (channel: VoiceBasedChannel, lease: VoiceLease) => {
         try {
