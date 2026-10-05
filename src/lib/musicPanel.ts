@@ -1,5 +1,6 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, escapeMarkdown, type Message } from 'discord.js';
 import type { MusicQueue } from './musicQueue.js';
+import { trackSource } from './musicTrack.js';
 
 export interface MusicPanelState {
     id: string;
@@ -32,10 +33,10 @@ export function renderMusicPanel(state: MusicPanelState) {
     const labels = { connecting: '連線／載入中', playing: '播放中', paused: '已暫停', ended: '已結束' };
     const embed = new EmbedBuilder()
         .setColor(ended ? 0x747f8d : paused ? 0xdaa520 : 0x20b2aa)
-        .setTitle(`🎧 本地電台 · ${labels[status]}`)
+        .setTitle(`🎧 音樂播放器 · ${labels[status]}`)
         .setDescription(track
-            ? `**${displayText(track.title, 200)}**${track.artist ? `\n${displayText(track.artist)}` : ''}\n本地曲庫 · 點歌者：${displayText(queue.current!.requestedBy, 60)}\n\n\`${durationText(elapsed)} ${progress} ${durationText(track.duration)}\``
-            : '選擇本地歌曲，與語音頻道的朋友一起聆聽。')
+            ? `**${displayText(track.title, 200)}**${track.artist ? `\n${displayText(track.artist)}` : ''}\n${trackSource(track) === 'remote' ? '遠端曲庫' : '本地曲庫'} · 點歌者：${displayText(queue.current!.requestedBy, 60)}\n\n\`${durationText(elapsed)} ${progress} ${durationText(track.duration)}\``
+            : '選擇歌曲，與語音頻道的朋友一起聆聽。')
         .addFields(
             { name: '🔊 音量', value: `${state.volume}%`, inline: true },
             { name: '🔁 循環', value: repeatLabels[queue.repeat], inline: true },

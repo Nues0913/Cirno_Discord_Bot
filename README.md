@@ -70,9 +70,22 @@ VOICE_CHANNEL_IDS=your_channel_id,your_channel2_id,...
 VOICE_AUDIO_DIRECTORY=assets/songs
 ```
 
-## 音樂資料庫串聯
+## 遠端音樂曲庫
 
-building...
+Bot 可連接獨立的 `music_server` 曲庫 API。在 Bot 的 `.env` 設定：
+
+```dotenv
+REMOTE_MUSIC_API_URL=https://your-music-server.example/
+REMOTE_MUSIC_API_TOKEN=your_music_server_api_token
+REMOTE_MUSIC_MODE=stream
+REMOTE_MUSIC_BUFFER_SECONDS=3
+```
+
+網址必須指向能傳送音檔的 Nginx 入口；本機 Docker Compose 預設為 `http://127.0.0.1:8080/`，直接連 Fastify 埠只會收到 `X-Accel-Redirect` 標頭。Token 使用 `music_server` 根目錄 `.env` 的 `API_TOKEN`，不用上傳管理用的 `ADMIN_TOKEN`。Bot 搬到另一台主機時，須將網址改成可連通的 HTTPS 或私有 VPN 入口；`127.0.0.1` 只指向 Bot 自己所在的主機。
+
+使用 `/music library source:remote` 瀏覽遠端曲庫；使用 `/music play source:remote song:歌曲` 搜尋並點播。輸入歌曲前先選擇 `source:remote`，自動完成才會顯示遠端結果。未選來源時維持本地曲庫。本地與遠端歌曲可加入同一佇列，共用面板與控制規則；面板的「選歌」按鈕會開啟目前歌曲所屬的曲庫。
+
+`REMOTE_MUSIC_MODE=stream`（預設）會邊接收邊播放，不將整首歌存到 Bot 主機。串流模式預設先緩衝約 3 秒解碼後的音訊再開始播放，可用 `REMOTE_MUSIC_BUFFER_SECONDS` 設為 0–10 秒；設大會增加開始播放的等待時間與每條串流的記憶體用量，對持續低於播放速度的網路無法補救。`download` 會先下載並驗證整首音檔，再從暫存檔播放，結束後刪除。下載模式的暫存目錄預設為 `data/remote-music-cache/`，可用 `REMOTE_MUSIC_CACHE_DIRECTORY` 修改。`/music reload` 只重掃本地曲庫；遠端歌曲在 `music_server` 匯入或停用後由 API 即時反映。
 
 
 ## 複製文管理
@@ -144,4 +157,3 @@ NVIDIA_NIM_SYSTEM_PROMPT=You are a helpful Discord assistant.
 # 若使用自行部署的 NIM，可覆寫 API URL
 NVIDIA_NIM_URL=https://integrate.api.nvidia.com/v1/chat/completions
 ```
-

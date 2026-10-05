@@ -1,6 +1,6 @@
-import type { LocalTrack } from './localMusicLibrary.js';
+import { trackKey, type MusicTrack } from './musicTrack.js';
 export type RepeatMode = 'off' | 'one' | 'all';
-export interface QueueEntry { track: LocalTrack; requestedBy: string; }
+export interface QueueEntry { track: MusicTrack; requestedBy: string; }
 export class MusicQueue {
     current?: QueueEntry;
     pending: QueueEntry[] = [];
@@ -18,7 +18,7 @@ export class MusicQueue {
             this.pending.push(previous);
         }
         if (reason === 'error' && previous) {
-            this.pending = this.pending.filter(entry => entry.track.id !== previous.track.id);
+            this.pending = this.pending.filter(entry => trackKey(entry.track) !== trackKey(previous.track));
         }
         this.current = this.pending.shift();
         return this.current;

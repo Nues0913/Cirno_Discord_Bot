@@ -5,9 +5,12 @@ import {
     type AudioPlayer, type DiscordGatewayAdapterCreator, type VoiceConnection
 } from '@discordjs/voice';
 import { Events, PermissionFlagsBits, type Client, type GuildTextBasedChannel, type VoiceChannel } from 'discord.js';
-import { musicLibrary, type LocalTrack } from './localMusicLibrary.js';
+import { musicLibrary } from './localMusicLibrary.js';
+import { isRemoteTrack, type MusicTrack } from './musicTrack.js';
 import { MusicQueue, GuildTasks } from './musicQueue.js';
 import { createLocalAudio } from './localAudio.js';
+import { createRemoteDownloadedAudio, createRemoteStreamAudio } from './remoteAudio.js';
+import { remoteMusicMode } from './remoteMusicLibrary.js';
 import { MusicPanel, renderMusicPanel, type MusicPanelState } from './musicPanel.js';
 import { voiceSessions, type VoiceLease } from './voiceSessionManager.js';
 import logger from './logger.js';
@@ -28,6 +31,7 @@ export class MusicSession {
     emptyTimer?: NodeJS.Timeout;
     pauseTimer?: NodeJS.Timeout;
     bufferingTimer?: NodeJS.Timeout;
+    loadController?: AbortController;
     recovering = false;
     hasConnected = false;
     constructor(readonly channel: VoiceChannel, readonly lease: VoiceLease) {}
@@ -42,6 +46,7 @@ export class MusicSession {
     clearAudio(): void {
         clearTimeout(this.bufferingTimer); this.bufferingTimer = undefined;
         clearTimeout(this.pauseTimer); this.pauseTimer = undefined;
+        this.loadController?.abort(); this.loadController = undefined;
         // Remove listeners before stop(), which emits Idle synchronously.
         this.player?.removeAllListeners();
         this.player?.stop(true); this.player = undefined;
@@ -49,7 +54,7 @@ export class MusicSession {
     }
 }
 
-export class LocalMusicPlayer {
+export class MusicPlayer {
     private sessions = new Map<string, MusicSession>();
     private tasks = new GuildTasks();
     private initialized = false;
@@ -87,7 +92,7 @@ export class LocalMusicPlayer {
         }
         return session;
     }
-    async enqueue(channel: VoiceChannel, textChannel: GuildTextBasedChannel, userId: string, requestedBy: string, track: LocalTrack): Promise<MusicSession> {
+    async enqueue(channel: VoiceChannel, textChannel: GuildTextBasedChannel, userId: string, requestedBy: string, track: MusicTrack): Promise<MusicSession> {
         return this.tasks.run(channel.guild.id, async () => {
             let session = this.get(channel.guild.id);
             if (session) {
@@ -105,7 +110,7 @@ export class LocalMusicPlayer {
             if (!textChannel.permissionsFor(me)?.has([PermissionFlagsBits.ViewChannel, sendPermission, PermissionFlagsBits.EmbedLinks])) {
                 throw new Error('Bot 需要此文字頻道的查看、傳送訊息及嵌入連結權限。');
             }
-            await musicLibrary.playablePath(track);
+            if (!isRemoteTrack(track)) await musicLibrary.playablePath(track);
             const lease = voiceSessions.acquire(channel.guild.id, 'music')!;
             session = new MusicSession(channel, lease);
             const current = session;
@@ -176,28 +181,48 @@ export class LocalMusicPlayer {
         session.status = 'connecting';
         session.panel.update();
         try {
-            const path = await musicLibrary.playablePath(entry.track);
-            if (!session.active || session.generation !== token) return;
-            const audio = createLocalAudio(path, session.volume, error => this.scheduleAdvance(session, token, 'error', error));
+            const loading = new AbortController();
+            session.loadController = loading;
+            const audio = !isRemoteTrack(entry.track)
+                ? createLocalAudio(await musicLibrary.playablePath(entry.track), session.volume, error => this.scheduleAdvance(session, token, 'error', error))
+                : await (remoteMusicMode() === 'stream' ? createRemoteStreamAudio : createRemoteDownloadedAudio)(
+                    entry.track, session.volume, error => this.scheduleAdvance(session, token, 'error', error), loading);
+            if (session.loadController === loading) session.loadController = undefined;
+            if (!session.active || session.generation !== token) { audio.dispose(); return; }
             session.audio = audio;
             const player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Pause } });
             session.player = player;
             player.once(AudioPlayerStatus.Idle, () => this.scheduleAdvance(session, token, 'finished'));
             player.on('error', error => this.scheduleAdvance(session, token, 'error', error));
+            const watchBuffering = () => {
+                clearTimeout(session.bufferingTimer);
+                session.bufferingTimer = setTimeout(() => this.scheduleAdvance(session, token, 'error', new Error('Audio buffering timed out')), 20_000).unref();
+            };
+            player.on(AudioPlayerStatus.Buffering, () => {
+                if (!session.active || session.generation !== token) return;
+                session.status = 'connecting'; session.panel.update();
+                watchBuffering();
+            });
             player.on(AudioPlayerStatus.Playing, () => {
                 if (!session.active || session.generation !== token) return;
                 clearTimeout(session.bufferingTimer); session.bufferingTimer = undefined;
                 session.status = 'playing'; session.panel.update();
             });
             session.connection!.subscribe(player);
+            watchBuffering();
             player.play(audio.resource);
-            session.bufferingTimer = setTimeout(() => this.scheduleAdvance(session, token, 'error', new Error('Audio buffering timed out')), 20_000).unref();
         } catch (error) {
+            if (session.loadController?.signal.aborted) return;
             logger.error(error);
             await this.advance(session, 'error');
         }
     }
     async control(guildId: string, userId: string, action: string, panel?: { sessionId: string; messageId: string; generation: number }): Promise<void> {
+        const loading = this.get(guildId);
+        if ((action === 'stop' || action === 'skip') && loading?.active &&
+            loading.channel.guild.voiceStates.cache.get(userId)?.channelId === loading.channel.id &&
+            (!panel || (panel.sessionId === loading.id && panel.messageId === loading.panel.message?.id &&
+                (action !== 'skip' || panel.generation === loading.generation)))) loading.loadController?.abort();
         return this.tasks.run(guildId, async () => {
             const session = panel ? this.assertPanel(guildId, panel.sessionId, panel.messageId) : this.get(guildId);
             if (!session?.active) throw new Error('目前沒有手動播放中的音樂。');
@@ -257,4 +282,4 @@ export class LocalMusicPlayer {
         session.panel.update(true);
     }
 }
-export const musicPlayer = new LocalMusicPlayer();
+export const musicPlayer = new MusicPlayer();
