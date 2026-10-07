@@ -4,7 +4,7 @@ import { isRemoteTrack, type MusicTrack } from './musicTrack.js';
 import type { SavedTrack } from './playlistStore.js';
 
 export function saveTrack(track: MusicTrack): SavedTrack {
-    return { source: isRemoteTrack(track) ? 'remote' : 'local', id: track.id, title: track.title, artist: track.artist,
+    return { source: isRemoteTrack(track) ? 'remote' : 'local', id: track.id, title: track.title.slice(0, 500), artist: track.artist?.slice(0, 500),
         ...(isRemoteTrack(track) ? { library: remoteLibraryKey() } : {}) };
 }
 export async function resolvePlaylist(tracks: SavedTrack[]): Promise<{ tracks: MusicTrack[]; unavailable: SavedTrack[] }> {

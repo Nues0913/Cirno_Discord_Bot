@@ -1,3 +1,4 @@
+import { RemotePlaylistStore } from './remotePlaylistStore.js';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, open } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -117,4 +118,19 @@ export class PlaylistStore {
         }, true);
     }
 }
-export const playlists = new PlaylistStore();
+const localPlaylists = new PlaylistStore();
+const remotePlaylists = new RemotePlaylistStore();
+// Explicit remote configuration is never silently replaced by local writes on failure.
+function backend(): PlaylistStore | RemotePlaylistStore {
+    return process.env.PLAYLIST_API_URL || process.env.PLAYLIST_API_TOKEN ? remotePlaylists : localPlaylists;
+}
+export const playlists = {
+    list: (owner: string) => backend().list(owner),
+    get: (owner: string, id: string) => backend().get(owner, id),
+    create: (owner: string, name: string, tracks: SavedTrack[] = []) => backend().create(owner, name, tracks),
+    rename: (owner: string, id: string, name: string) => backend().rename(owner, id, name),
+    delete: (owner: string, id: string, revision: number) => backend().delete(owner, id, revision),
+    add: (owner: string, id: string, tracks: SavedTrack[]) => backend().add(owner, id, tracks),
+    remove: (owner: string, id: string, entryId: string) => backend().remove(owner, id, entryId),
+    move: (owner: string, id: string, entryId: string, position: number) => backend().move(owner, id, entryId, position),
+};

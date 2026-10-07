@@ -90,11 +90,39 @@ Bot 在語音頻道需要「查看頻道」「連線」「說話」；面板所�
 
 播放前會重新查詢曲庫，無法取得的歌曲會略過並回報數量，不會自動刪除收藏。全部無法取得時不會開始播放。遠端項目會記住所屬 API 網址，避免切換曲庫後誤播同 ID 的其他歌曲；更換遠端網址或移動本地曲庫根目錄後，需重新加入受影響的收藏。
 
-資料保存在 Bot 的 `data/playlists.json`，重新啟動與指令熱重載後仍保留。請備份並持久掛載 `data/`，每份資料目錄只啟動一個 Bot 程序。檔案以序列化、原子替換寫入；讀到損壞資料時會拒絕修改，請由管理者還原備份。`music_server` 沿用現有歌曲 API，無需資料庫遷移或額外憑證。
+### 使用 Server 保存播放清單
+
+在 Bot `.env` 設定以下兩個變數，所有 `/playlist` 管理操作就會使用 `music_server` 的清單 API，本地與遠端歌曲收藏都可保存在同一個 Server：
+
+```dotenv
+PLAYLIST_API_URL=https://your-music-server.example/
+PLAYLIST_API_TOKEN=your_dedicated_playlist_bot_token
+```
+
+`PLAYLIST_API_TOKEN` 是 Server 的 **`PLAYLIST_BOT_TOKEN`**，至少 32 字元，與音檔讀取用的 `REMOTE_MUSIC_API_TOKEN` 及上傳管理金鑰不同。Server 的 `scripts/setup.sh` 會為缺少設定的安裝產生專用金鑰；請安全地提供給 Bot，不要提交到 Git 或交給 Discord 使用者。Server 需更新至支援清單 API 的版本，執行 `npm run db:generate`、`npm run db:migrate` 並重新啟動，或以 Docker 重新建置啟動並自動遷移。新增資料表不會刪除既有歌曲。
+
+Bot 只會以 Discord interaction 的使用者 ID 呼叫清單 API；Server 驗證專用金鑰後限制清單擁有者。更新帶有版本，遇到其他操作造成衝突會提示重新讀取；寫入不會自動重試。已設定任一清單 API 變數但服務無法連線或設定不完整時，會明確失敗，**不會退回本地寫入**。HTTP 只適用於可信任本機／私人網路，跨主機請使用 HTTPS。
+
+Server 模式的清單保存於 Server 的 SQLite；請備份並持久掛載 Server 的 DB 目錄。本地音檔仍在 Bot 主機，Server 只保存收藏參照，不會將本地音檔上傳。換 Bot 主機或移動本地曲庫後，可能需要重新加入本地收藏。
+
+### 舊資料匯入與獨立本地模式
+
+若先前已使用 `data/playlists.json`，請先停用舊 Bot 的寫入並備份原檔，啟動新版 Server、設定上述變數後，在 Bot 根目錄執行：
+
+```bash
+npm run build
+node scripts/import-playlists.mjs data/playlists.json
+```
+
+匯入保留使用者、清單 ID、歌曲項目 ID、順序及版本；原 JSON 不會被刪除或覆寫。中途失敗可用同一檔案重跑；已匯入項目不會重複建立，也不會覆蓋之後在 Server 上的編輯。原檔若被修改而與既有匯入內容衝突，工具會停止並回報。確認成功後才重新啟動 Bot 供使用者操作。
+
+沒有設定任何 `PLAYLIST_API_*` 變數時，仍支援獨立本地模式，資料保存在 Bot 的 `data/playlists.json`，重新啟動與指令熱重載後仍保留。此模式請備份並持久掛載 `data/`，每份資料目錄只啟動一個 Bot 程序；檔案以序列化、原子替換寫入，損壞資料會拒絕修改。
 
 這次包含播放器核心變更，請執行 `npm run build` 並重新啟動 Bot，啟動時會註冊新增的 `/playlist` 及更新後的 `/music`。全球指令更新可能需要等候 Discord 同步；`!reload` 只更新指令模組，不能替代本次重新啟動。
 
-`npm test` 包含個人清單權限、持久化及競態、指令互動、佇列與播放器控制，以及真實 FFmpeg 的本地／遠端串流／下載跳轉測試。測試使用暫存資料與本機模擬曲庫，不會登入 Discord 或修改正式曲庫。
+`npm test` 包含個人清單權限、持久化及競態、指令互動、佇列與播放器控制，以及真實 FFmpeg 的本地／遠端串流／下載跳轉測試。測試使用暫存資料與本機模擬曲庫，不會登入 Discord 或修改正式曲庫。新增遠端清單用戶端測試涵蓋專用驗證、版本傳送、錯誤不重試、資料隔離及匯入保留原檔。
+
+若同時有 `music_server` checkout，先建置 Server 的 `api/` 與 Bot，再於 Bot 根目錄執行 `node scripts/test-playlist-server.mjs ../music_server/api`。它會建立暫存 SQLite、啟動真實 HTTP Server，驗證兩邊的混合清單 CRUD、停用曲目及可重跑匯入，結束後清除暫存資料。
 
 ## 偵測語音頻道福音傳播
 
