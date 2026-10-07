@@ -52,8 +52,12 @@ export function renderMusicPanel(state: MusicPanelState) {
         embeds: [embed],
         components: [
             new ActionRowBuilder<ButtonBuilder>().addComponents(
+                button('previous', '⏮ 上一首', ButtonStyle.Secondary, !active || !queue.history.length),
+                button('restart', '↩ 從頭播放', ButtonStyle.Secondary, !active)
+            ),
+            new ActionRowBuilder<ButtonBuilder>().addComponents(
                 button('pause', paused ? '▶ 繼續' : '⏸ 暫停', ButtonStyle.Primary, !active),
-                button('skip', queue.repeat === 'one' ? '⏮ 從頭播放' : '⏭ 下一首', ButtonStyle.Secondary, !active),
+                button('skip', '⏭ 下一首', ButtonStyle.Secondary, !active),
                 button('repeat', `🔁 循環：${repeatLabels[queue.repeat]}`),
                 button('shuffle', '🔀 打亂待播', ButtonStyle.Secondary, queue.pending.length < 2)
             ),

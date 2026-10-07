@@ -2,12 +2,12 @@ import { spawn } from 'node:child_process';
 import ffmpegPath from 'ffmpeg-static';
 import { createAudioResource, StreamType } from '@discordjs/voice';
 
-export function createLocalAudio(path: string, volume: number, onError: (error: Error) => void) {
+export function createLocalAudio(path: string, volume: number, onError: (error: Error) => void, offset = 0) {
     const executable = ffmpegPath as unknown as string | null;
     if (!executable) throw new Error('此平台沒有可用的 FFmpeg。');
     const child = spawn(executable, [
         '-nostdin', '-hide_banner', '-loglevel', 'error',
-        '-protocol_whitelist', 'file,pipe', '-i', path,
+        '-protocol_whitelist', 'file,pipe', '-ss', String(offset), '-i', path,
         '-vn', '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1'
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
     let disposed = false;

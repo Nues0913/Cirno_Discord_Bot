@@ -16,7 +16,8 @@ export const data = new SlashCommandBuilder().setName('music').setDescription('�
     .addSubcommand(sub => sub.setName('play').setDescription('播放歌曲或加入佇列')
         .addStringOption(option => option.setName('song').setDescription('搜尋歌曲名稱').setAutocomplete(true).setRequired(true))
         .addStringOption(option => option.setName('source').setDescription('曲庫來源，預設本地')
-            .addChoices({ name: '本地曲庫', value: 'local' }, { name: '遠端曲庫', value: 'remote' })))
+            .addChoices({ name: '本地曲庫', value: 'local' }, { name: '遠端曲庫', value: 'remote' }))
+        .addBooleanOption(option => option.setName('next').setDescription('排在待播佇列最前方')))
     .addSubcommand(sub => sub.setName('library').setDescription('瀏覽曲庫')
         .addStringOption(option => option.setName('query').setDescription('歌曲或演出者關鍵字'))
         .addStringOption(option => option.setName('source').setDescription('曲庫來源，預設本地')
@@ -24,12 +25,31 @@ export const data = new SlashCommandBuilder().setName('music').setDescription('�
     .addSubcommand(sub => sub.setName('queue').setDescription('查看待播清單'))
     .addSubcommand(sub => sub.setName('panel').setDescription('取得或重建播放器面板'))
     .addSubcommand(sub => sub.setName('stop').setDescription('結束播放並離開語音頻道'))
+    .addSubcommand(sub => sub.setName('pause').setDescription('暫停播放'))
+    .addSubcommand(sub => sub.setName('resume').setDescription('繼續播放'))
+    .addSubcommand(sub => sub.setName('skip').setDescription('下一首（單曲循環也會跳過）'))
+    .addSubcommand(sub => sub.setName('previous').setDescription('回到上一首，現在歌曲排到待播首位'))
+    .addSubcommand(sub => sub.setName('restart').setDescription('目前歌曲從頭播放'))
+    .addSubcommand(sub => sub.setName('seek').setDescription('跳到目前歌曲的指定秒數')
+        .addIntegerOption(o => o.setName('seconds').setDescription('從歌曲開頭算起的秒數').setMinValue(0).setRequired(true)))
+    .addSubcommand(sub => sub.setName('volume').setDescription('設定播放音量')
+        .addIntegerOption(o => o.setName('percent').setDescription('0–100').setMinValue(0).setMaxValue(100).setRequired(true)))
+    .addSubcommand(sub => sub.setName('repeat').setDescription('設定循環方式')
+        .addStringOption(o => o.setName('mode').setDescription('循環方式').setRequired(true)
+            .addChoices({ name: '關閉', value: 'off' }, { name: '單曲', value: 'one' }, { name: '佇列', value: 'all' })))
+    .addSubcommand(sub => sub.setName('shuffle').setDescription('打亂待播歌曲'))
+    .addSubcommand(sub => sub.setName('remove').setDescription('移除待播歌曲（位置見 /music queue）')
+        .addIntegerOption(o => o.setName('position').setDescription('待播位置，從 1 開始').setMinValue(1).setRequired(true)))
+    .addSubcommand(sub => sub.setName('move').setDescription('調整待播歌曲順序')
+        .addIntegerOption(o => o.setName('from').setDescription('原位置').setMinValue(1).setRequired(true))
+        .addIntegerOption(o => o.setName('to').setDescription('目標位置').setMinValue(1).setRequired(true)))
+    .addSubcommand(sub => sub.setName('clear').setDescription('清空待播歌曲，保留目前播放'))
     .addSubcommand(sub => sub.setName('reload').setDescription('重新掃描本地曲庫（所有成員可使用）'));
 
 type MusicInteraction = ChatInputCommandInteraction | ButtonInteraction | StringSelectMenuInteraction;
 type MusicSource = 'local' | 'remote';
 const selectedSource = (value: string | null): MusicSource => value === 'remote' ? 'remote' : 'local';
-async function findTracks(source: MusicSource, query: string): Promise<MusicTrack[]> {
+export async function findTracks(source: MusicSource, query: string): Promise<MusicTrack[]> {
     if (source === 'remote') {
         if (isRemoteId(query)) return [await getRemoteSong(query)];
         return (await searchRemoteSongs(query)).items;
@@ -39,7 +59,7 @@ async function findTracks(source: MusicSource, query: string): Promise<MusicTrac
 }
 interface Browser {
     userId: string; guildId: string; sessionId?: string; kind: 'library' | 'queue';
-    source: MusicSource; query: string; page: number; expires: number;
+    source: MusicSource; query: string; page: number; expires: number; next: boolean;
     ids: string[]; remotePages: Map<number, RemotePage>;
 }
 const browsers = new Map<string, Browser>();
@@ -47,13 +67,13 @@ function pruneBrowsers(): void {
     for (const [key, value] of browsers) if (value.expires < Date.now()) browsers.delete(key);
     while (browsers.size >= 1000) browsers.delete(browsers.keys().next().value!);
 }
-async function createBrowser(interaction: MusicInteraction, kind: Browser['kind'], query = '', source: Browser['source'] = 'local') {
+async function createBrowser(interaction: MusicInteraction, kind: Browser['kind'], query = '', source: Browser['source'] = 'local', next = false) {
     pruneBrowsers();
     const key = randomBytes(8).toString('hex');
     const browser: Browser = {
         userId: interaction.user.id, guildId: interaction.guildId!,
         sessionId: musicPlayer.get(interaction.guildId!)?.id,
-        kind, source, query, page: 0, expires: Date.now() + 15 * 60_000,
+        kind, source, query, next, page: 0, expires: Date.now() + 15 * 60_000,
         ids: kind === 'library' && source === 'local' ? musicLibrary.search(query).map(track => track.id) : [],
         remotePages: new Map()
     };
@@ -106,17 +126,34 @@ function textChannel(interaction: MusicInteraction): GuildTextBasedChannel {
     if (!interaction.guild || !channel || channel.isDMBased() || !channel.isTextBased()) throw new Error('請在伺服器文字頻道使用此功能。');
     return channel as GuildTextBasedChannel;
 }
-async function play(interaction: MusicInteraction, track: MusicTrack): Promise<string> {
+export async function playTracks(interaction: MusicInteraction, tracks: MusicTrack[], next = false): Promise<string> {
     const channel = interaction.guild!.voiceStates.cache.get(interaction.user.id)?.channel;
     if (!channel || channel.type !== ChannelType.GuildVoice) throw new Error('請先加入一般語音頻道再點歌（不支援 Stage 頻道）。');
-    const session = await musicPlayer.enqueue(channel, textChannel(interaction), interaction.user.id, interaction.user.displayName, track);
-    return `已加入播放：**${displayText(track.title)}**${session.panel.message ? `\n${session.panel.message.url}` : ''}`;
+    const session = await musicPlayer.enqueueMany(channel, textChannel(interaction), interaction.user.id, interaction.user.displayName, tracks, next);
+    return `已加入播放：${tracks.length === 1 ? `**${displayText(tracks[0].title)}**` : `${tracks.length} 首歌曲`}${session.panel.message ? `\n${session.panel.message.url}` : ''}`;
 }
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
         if (!interaction.guildId || !interaction.guild) throw new Error('請在伺服器內使用此指令。');
-        switch (interaction.options.getSubcommand()) {
+        const subcommand = interaction.options.getSubcommand();
+        if (['pause', 'resume', 'skip', 'previous', 'restart', 'seek', 'volume', 'repeat', 'shuffle'].includes(subcommand)) {
+            const action = subcommand === 'pause' ? 'pauseOnly' : subcommand === 'repeat' ? 'repeatMode' : subcommand;
+            const value = subcommand === 'seek' ? interaction.options.getInteger('seconds', true)
+                : subcommand === 'volume' ? interaction.options.getInteger('percent', true)
+                : subcommand === 'repeat' ? interaction.options.getString('mode', true) : undefined;
+            await musicPlayer.control(interaction.guildId, interaction.user.id, action, undefined, value);
+            await interaction.editReply('已更新播放器。'); return;
+        }
+        if (subcommand === 'remove' || subcommand === 'move' || subcommand === 'clear') {
+            const session = musicPlayer.get(interaction.guildId);
+            if (!session) throw new Error('目前沒有播放中的音樂。');
+            await musicPlayer.editQueue(interaction.guildId, interaction.user.id, session.id, session.queue.revision, subcommand,
+                interaction.options.getInteger(subcommand === 'remove' ? 'position' : 'from') ?? undefined,
+                interaction.options.getInteger('to') ?? undefined);
+            await interaction.editReply('已更新待播佇列，目前歌曲繼續播放。'); return;
+        }
+        switch (subcommand) {
             case 'play': {
                 const source = selectedSource(interaction.options.getString('source'));
                 if (source === 'local') await musicLibrary.load();
@@ -124,9 +161,9 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
                 const matches = await findTracks(source, query);
                 if (!matches.length) throw new Error('找不到此歌曲，請使用 /music library 查看曲庫。');
                 if (matches.length > 1) {
-                    await interaction.editReply(await createBrowser(interaction, 'library', query, source)); return;
+                    await interaction.editReply(await createBrowser(interaction, 'library', query, source, interaction.options.getBoolean('next') ?? false)); return;
                 }
-                await interaction.editReply({ content: await play(interaction, matches[0]), allowedMentions: { parse: [] } }); return;
+                await interaction.editReply({ content: await playTracks(interaction, [matches[0]], interaction.options.getBoolean('next') ?? false), allowedMentions: { parse: [] } }); return;
             }
             case 'library':
                 { const source = selectedSource(interaction.options.getString('source'));
@@ -186,7 +223,7 @@ export async function handleMusicInteraction(interaction: Interaction): Promise<
                     ? browser.remotePages.get(browser.page)?.items.some(item => item.id === id) ? await getRemoteSong(id) : undefined
                     : browser.ids.includes(id) ? musicLibrary.get(id) : undefined;
                 if (!track) throw new Error('歌曲已移除，請重新開啟曲庫。');
-                await interaction.editReply({ content: await play(interaction, track), allowedMentions: { parse: [] } });
+                await interaction.editReply({ content: await playTracks(interaction, [track], browser.next), allowedMentions: { parse: [] } });
             } else if (interaction.isButton() && ['prev', 'next'].includes(action)) {
                 await interaction.deferUpdate();
                 const nextPage = action === 'next' ? browser.page + 1 : Math.max(0, browser.page - 1);

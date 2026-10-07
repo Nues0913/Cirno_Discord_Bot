@@ -21,6 +21,7 @@ export class MusicSession {
     readonly panel = new MusicPanel(() => this.view(), error => logger.error(error));
     status: MusicPanelState['status'] = 'connecting';
     volume = 70;
+    offset = 0;
     generation = 0;
     failures = 0;
     notice?: string;
@@ -40,7 +41,7 @@ export class MusicSession {
         return {
             id: this.id, generation: this.generation, channelId: this.channel.id,
             queue: this.queue, status: this.status, volume: this.volume,
-            elapsed: (this.audio?.resource.playbackDuration ?? 0) / 1000, notice: this.notice
+            elapsed: this.offset + (this.audio?.resource.playbackDuration ?? 0) / 1000, notice: this.notice
         };
     }
     clearAudio(): void {
@@ -93,11 +94,15 @@ export class MusicPlayer {
         return session;
     }
     async enqueue(channel: VoiceChannel, textChannel: GuildTextBasedChannel, userId: string, requestedBy: string, track: MusicTrack): Promise<MusicSession> {
+        return this.enqueueMany(channel, textChannel, userId, requestedBy, [track]);
+    }
+    async enqueueMany(channel: VoiceChannel, textChannel: GuildTextBasedChannel, userId: string, requestedBy: string, tracks: MusicTrack[], next = false): Promise<MusicSession> {
+        if (!tracks.length || tracks.length > 100) throw new Error('一次請加入 1–100 首歌曲。');
         return this.tasks.run(channel.guild.id, async () => {
             let session = this.get(channel.guild.id);
             if (session) {
                 this.assertListener(session, userId);
-                session.queue.add({ track, requestedBy });
+                session.queue.addMany(tracks.map(track => ({ track, requestedBy })), next);
                 session.panel.update();
                 return session;
             }
@@ -110,13 +115,12 @@ export class MusicPlayer {
             if (!textChannel.permissionsFor(me)?.has([PermissionFlagsBits.ViewChannel, sendPermission, PermissionFlagsBits.EmbedLinks])) {
                 throw new Error('Bot 需要此文字頻道的查看、傳送訊息及嵌入連結權限。');
             }
-            if (!isRemoteTrack(track)) await musicLibrary.playablePath(track);
             const lease = voiceSessions.acquire(channel.guild.id, 'music')!;
             session = new MusicSession(channel, lease);
             const current = session;
             this.sessions.set(channel.guild.id, current);
             lease.onDispose(() => this.dispose(current));
-            current.queue.add({ track, requestedBy });
+            current.queue.addMany(tracks.map(track => ({ track, requestedBy })));
             try {
                 current.panel.attach(await textChannel.send(renderMusicPanel(current.view())));
                 if (!current.active) throw new Error('播放已結束，請重新點歌。');
@@ -172,21 +176,26 @@ export class MusicPlayer {
             session.failures++;
             session.notice = `無法播放「${previous?.track.title ?? '此歌曲'}」，已略過。`;
         } else if (reason === 'finished') session.failures = 0;
-        session.generation++;
-        const token = session.generation;
-        session.clearAudio();
         if (session.failures >= 3) { this.end(session, '連續三首無法播放，請檢查音檔。'); return; }
         const entry = session.queue.advance(reason);
         if (!entry) { this.end(session, reason === 'error' ? session.notice! : '播放清單已結束。'); return; }
+        await this.playCurrent(session);
+    }
+    private async playCurrent(session: MusicSession, offset = 0, paused = false): Promise<void> {
+        const entry = session.queue.current;
+        if (!session.active || !entry) return;
+        const token = ++session.generation;
+        session.clearAudio();
+        session.offset = offset;
         session.status = 'connecting';
         session.panel.update();
         try {
             const loading = new AbortController();
             session.loadController = loading;
             const audio = !isRemoteTrack(entry.track)
-                ? createLocalAudio(await musicLibrary.playablePath(entry.track), session.volume, error => this.scheduleAdvance(session, token, 'error', error))
+                ? createLocalAudio(await musicLibrary.playablePath(entry.track), session.volume, error => this.scheduleAdvance(session, token, 'error', error), offset)
                 : await (remoteMusicMode() === 'stream' ? createRemoteStreamAudio : createRemoteDownloadedAudio)(
-                    entry.track, session.volume, error => this.scheduleAdvance(session, token, 'error', error), loading);
+                    entry.track, session.volume, error => this.scheduleAdvance(session, token, 'error', error), loading, offset);
             if (session.loadController === loading) session.loadController = undefined;
             if (!session.active || session.generation !== token) { audio.dispose(); return; }
             session.audio = audio;
@@ -203,46 +212,72 @@ export class MusicPlayer {
                 session.status = 'connecting'; session.panel.update();
                 watchBuffering();
             });
+            let pauseOnReady = paused;
             player.on(AudioPlayerStatus.Playing, () => {
                 if (!session.active || session.generation !== token) return;
                 clearTimeout(session.bufferingTimer); session.bufferingTimer = undefined;
-                session.status = 'playing'; session.panel.update();
+                session.status = 'playing';
+                if (pauseOnReady) { pauseOnReady = false; this.setPaused(session, true); }
+                session.panel.update();
             });
             session.connection!.subscribe(player);
             watchBuffering();
             player.play(audio.resource);
         } catch (error) {
-            if (session.loadController?.signal.aborted) return;
+            if (!session.active || session.generation !== token || session.loadController?.signal.reason === 'control') return;
             logger.error(error);
             await this.advance(session, 'error');
         }
     }
-    async control(guildId: string, userId: string, action: string, panel?: { sessionId: string; messageId: string; generation: number }): Promise<void> {
+    private setPaused(session: MusicSession, paused: boolean): void {
+        if (paused && session.status === 'paused' || !paused && session.status === 'playing') return;
+        if (paused && session.status !== 'playing' || !paused && session.status !== 'paused') throw new Error('歌曲仍在載入中，請稍後再試。');
+        if (paused ? !session.player?.pause() : !session.player?.unpause()) throw new Error('目前無法變更播放狀態。');
+        session.status = paused ? 'paused' : 'playing';
+        clearTimeout(session.pauseTimer); session.pauseTimer = undefined;
+        if (paused) session.pauseTimer = setTimeout(() => {
+            if (session.active && session.status === 'paused') this.end(session, '暫停已達 10 分鐘，播放結束。');
+        }, 600_000).unref();
+    }
+    async control(guildId: string, userId: string, action: string, panel?: { sessionId: string; messageId: string; generation: number }, value?: number | string): Promise<void> {
         const loading = this.get(guildId);
         if ((action === 'stop' || action === 'skip') && loading?.active &&
             loading.channel.guild.voiceStates.cache.get(userId)?.channelId === loading.channel.id &&
             (!panel || (panel.sessionId === loading.id && panel.messageId === loading.panel.message?.id &&
-                (action !== 'skip' || panel.generation === loading.generation)))) loading.loadController?.abort();
+                (action !== 'skip' || panel.generation === loading.generation)))) loading.loadController?.abort('control');
         return this.tasks.run(guildId, async () => {
             const session = panel ? this.assertPanel(guildId, panel.sessionId, panel.messageId) : this.get(guildId);
             if (!session?.active) throw new Error('目前沒有手動播放中的音樂。');
             this.assertListener(session, userId);
-            if (panel && ['skip', 'pause'].includes(action) && panel.generation !== session.generation) throw new Error('歌曲已切換，請使用更新後的面板。');
+            if (panel && ['skip', 'pause', 'previous', 'restart'].includes(action) && panel.generation !== session.generation) throw new Error('歌曲已切換，請使用更新後的面板。');
             switch (action) {
                 case 'stop': this.end(session, '已結束播放。'); return;
                 case 'skip': await this.advance(session, 'skip'); break;
-                case 'pause':
-                    if (session.status === 'paused') {
-                        if (!session.player?.unpause()) throw new Error('目前無法繼續播放。');
-                        session.status = 'playing'; clearTimeout(session.pauseTimer); session.pauseTimer = undefined;
-                    } else if (session.status === 'playing') {
-                        if (!session.player?.pause()) throw new Error('目前無法暫停。');
-                        session.status = 'paused';
-                        session.pauseTimer = setTimeout(() => {
-                            if (session.active && session.status === 'paused') this.end(session, '暫停已達 10 分鐘，播放結束。');
-                        }, 600_000).unref();
-                    } else throw new Error('歌曲仍在載入中，請稍後再試。');
-                    break;
+                case 'pause': this.setPaused(session, session.status !== 'paused'); break;
+                case 'pauseOnly': this.setPaused(session, true); break;
+                case 'resume': this.setPaused(session, false); break;
+                case 'previous':
+                    session.queue.previous(); session.failures = 0; session.notice = undefined;
+                    await this.playCurrent(session); break;
+                case 'restart':
+                case 'seek': {
+                    const offset = action === 'restart' ? 0 : Number(value);
+                    const duration = session.queue.current?.track.duration;
+                    if (!Number.isFinite(offset) || offset < 0 || (offset > 0 && (!duration || offset >= duration))) {
+                        throw new Error('請輸入小於歌曲總長的秒數；總長未知的歌曲只能從頭播放。');
+                    }
+                    const paused = session.status === 'paused';
+                    session.failures = 0; session.notice = undefined;
+                    await this.playCurrent(session, offset, paused); break;
+                }
+                case 'volume': {
+                    const volume = Number(value);
+                    if (!Number.isInteger(volume) || volume < 0 || volume > 100) throw new Error('音量須介於 0–100。');
+                    session.volume = volume; session.audio?.resource.volume?.setVolume(volume / 100); break;
+                }
+                case 'repeatMode':
+                    if (value !== 'off' && value !== 'one' && value !== 'all') throw new Error('無效的循環模式。');
+                    session.queue.repeat = value; break;
                 case 'repeat': session.queue.cycleRepeat(); break;
                 case 'shuffle': session.queue.shuffle(); break;
                 case 'up': case 'down':
@@ -250,6 +285,18 @@ export class MusicPlayer {
                     session.audio?.resource.volume?.setVolume(session.volume / 100); break;
                 default: throw new Error('未知的播放器操作。');
             }
+            session.panel.update();
+        });
+    }
+    async editQueue(guildId: string, userId: string, sessionId: string, revision: number, action: 'remove' | 'move' | 'clear', from?: number, to?: number): Promise<void> {
+        return this.tasks.run(guildId, () => {
+            const session = this.get(guildId);
+            if (!session?.active || session.id !== sessionId) throw new Error('播放已結束，請重新開啟佇列。');
+            this.assertListener(session, userId);
+            if (session.queue.revision !== revision) throw new Error('佇列剛剛已變更，請重新查看後操作。');
+            if (action === 'remove') session.queue.remove(from!);
+            else if (action === 'move') session.queue.move(from!, to!);
+            else session.queue.clearPending();
             session.panel.update();
         });
     }

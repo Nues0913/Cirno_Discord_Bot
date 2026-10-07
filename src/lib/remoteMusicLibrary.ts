@@ -29,6 +29,8 @@ function settings(): { base: URL; token: string } {
     return { base, token };
 }
 
+export function remoteLibraryKey(): string { return settings().base.href; }
+
 function url(path: string, query?: URLSearchParams): URL {
     const { base } = settings();
     const result = new URL(path, base);

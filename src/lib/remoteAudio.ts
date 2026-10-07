@@ -71,7 +71,7 @@ function decodedAudioBuffer(): Transform {
 }
 
 export async function createRemoteStreamAudio(
-    track: RemoteTrack, volume: number, onError: (error: Error) => void, loadController: AbortController
+    track: RemoteTrack, volume: number, onError: (error: Error) => void, loadController: AbortController, offset = 0
 ): Promise<AudioOutput> {
     const response = await openRemoteAudio(track.id, loadController);
     try { checkHeaders(response, track); }
@@ -83,7 +83,7 @@ export async function createRemoteStreamAudio(
     catch (error) { await response.body?.cancel(); throw error; }
     const child = spawn(executable, [
         '-nostdin', '-hide_banner', '-loglevel', 'error',
-        '-protocol_whitelist', 'file,pipe', '-i', 'pipe:0',
+        '-protocol_whitelist', 'file,pipe', '-i', 'pipe:0', '-ss', String(offset),
         '-vn', '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1'
     ], { stdio: ['pipe', 'pipe', 'pipe'] });
     let disposed = false;
@@ -113,7 +113,7 @@ export async function createRemoteStreamAudio(
 }
 
 export async function createRemoteDownloadedAudio(
-    track: RemoteTrack, volume: number, onError: (error: Error) => void, loadController: AbortController
+    track: RemoteTrack, volume: number, onError: (error: Error) => void, loadController: AbortController, offset = 0
 ): Promise<AudioOutput> {
     const directory = resolve(process.env.REMOTE_MUSIC_CACHE_DIRECTORY?.trim() || 'data/remote-music-cache');
     await mkdir(directory, { recursive: true });
@@ -130,7 +130,7 @@ export async function createRemoteDownloadedAudio(
         );
         if (loadController.signal.aborted) throw new Error('下載已取消。');
         await rename(part, complete);
-        const audio = createLocalAudio(complete, volume, onError);
+        const audio = createLocalAudio(complete, volume, onError, offset);
         return { resource: audio.resource, dispose() { audio.dispose(); void rm(complete, { force: true }); } };
     } catch (error) {
         loadController.abort();

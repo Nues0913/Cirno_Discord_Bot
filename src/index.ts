@@ -83,6 +83,8 @@ async function registerGlobalCommands(commands: any[]) {
 
 client.on(Events.InteractionCreate, async interaction => {
     try {
+        const playlistCommand = client.commands.get('playlist');
+        if (playlistCommand?.handlePlaylistInteraction && await playlistCommand.handlePlaylistInteraction(interaction)) return;
         const musicCommand = client.commands.get('music');
         if (musicCommand?.handleMusicInteraction && await musicCommand.handleMusicInteraction(interaction)) return;
     } catch (error) {
