@@ -1,12 +1,16 @@
 import { musicLibrary, getRemoteSong, remoteLibraryKey, isRemoteTrack, type MusicTrack } from '../music/api.js';
 import type { SavedTrack } from './model.js';
+import logger from '../../shared/logging/logger.js';
 
 export function saveTrack(track: MusicTrack): SavedTrack {
     return { source: isRemoteTrack(track) ? 'remote' : 'local', id: track.id, title: track.title.slice(0, 500), artist: track.artist?.slice(0, 500),
         ...(isRemoteTrack(track) ? { library: remoteLibraryKey() } : {}) };
 }
 export async function resolvePlaylist(tracks: SavedTrack[]): Promise<{ tracks: MusicTrack[]; unavailable: SavedTrack[] }> {
-    await musicLibrary.load();
+    // Local availability must not prevent independent remote entries from resolving.
+    const localLibraryReady = tracks.some(track => track.source === 'local')
+        ? musicLibrary.load().then(() => true, error => { logger.error(error); return false; })
+        : Promise.resolve(false);
     const resolved: Array<MusicTrack | undefined> = new Array(tracks.length);
     let cursor = 0;
     // Bound remote requests while preserving playlist order and duplicate entries.
@@ -18,7 +22,7 @@ export async function resolvePlaylist(tracks: SavedTrack[]): Promise<{ tracks: M
                 if (reference.source === 'remote') {
                     if (reference.library !== remoteLibraryKey()) continue;
                     resolved[index] = await getRemoteSong(reference.id);
-                } else {
+                } else if (await localLibraryReady) {
                     const track = musicLibrary.get(reference.id);
                     if (track) { await musicLibrary.playablePath(track); resolved[index] = track; }
                 }
