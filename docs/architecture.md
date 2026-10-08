@@ -37,6 +37,8 @@ src/
 
 停止／跳歌的取消仍先於 guild 工作排隊，以免等待下載完成才能停止。generation guard 拒絕舊播放事件，queue revision guard 拒絕過期的排序操作。`startBot` 回傳 stop 並在 SIGTERM／SIGINT 清理 listeners 與語音工作階段。
 
+`MusicPlayer.shutdown()` 先封閉新增操作並遞增生命週期，再取消載入、釋放 session 與 listeners。公開的點歌、控制、佇列編輯及面板操作在呼叫時與排隊執行前都檢查生命週期；`initialize()` 重新開放操作，也不會讓停止前的排隊任務復活。停止可重複呼叫，已執行中的載入由 session 的 abort／active guard 結束，不開始剩餘歌曲。
+
 個人選單有獨立 registry，最多 1,000 份、有效 15 分鐘。`!reload` 只掃描真正的 `commands/*/index`，所有模組成功載入後才替換指令集合；成功重載會更新音樂／清單的指令處理入口、清除個人音樂選單，保留播放 session。被入口靜態引用的底層模組仍需重新啟動才能更新；重構部署必須完整 build 並重啟。
 
 AI 的 HTTP 設定與請求、SSE 分片／工具參數合併、工具執行、回合協調與 Discord 更新分開。讀取完成、解析錯誤與消費者錯誤都會釋放 stream reader；最終回覆等待已排隊的編輯，避免舊預覽蓋掉答案。

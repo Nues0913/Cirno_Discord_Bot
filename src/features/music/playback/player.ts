@@ -13,6 +13,8 @@ export class MusicPlayer {
     private sessions = new Map<string, MusicSession>();
     private tasks = new GuildTasks();
     private voiceCleanup?: () => void;
+    private stopped = false;
+    private lifecycle = 0;
     readonly playback = new PlaybackEngine({
         end: (session, notice) => this.end(session, notice),
         scheduleAdvance: (session, token, reason, error) => this.scheduleAdvance(session, token, reason, error)
@@ -20,6 +22,7 @@ export class MusicPlayer {
     get(guildId: string): MusicSession | undefined { return this.sessions.get(guildId); }
     initialize(client: Client): void {
         if (this.voiceCleanup) return;
+        this.stopped = false;
         const listener = (oldState: import('discord.js').VoiceState, newState: import('discord.js').VoiceState) => {
             const session = this.get(newState.guild.id);
             if (!session) return;
@@ -31,8 +34,19 @@ export class MusicPlayer {
         this.voiceCleanup = () => { client.off(Events.VoiceStateUpdate, listener); };
     }
     shutdown(): void {
+        if (this.stopped) return;
+        // Invalidate pending work before releasing sessions; a restart cannot revive it.
+        this.stopped = true; this.lifecycle++;
         this.voiceCleanup?.(); this.voiceCleanup = undefined;
         for (const session of [...this.sessions.values()]) this.end(session, 'Bot 已停止，播放結束。');
+    }
+    private async runTask<T>(guildId: string, task: () => Promise<T> | T): Promise<T> {
+        const lifecycle = this.lifecycle;
+        if (this.stopped) throw new Error('播放器已停止或重新啟動，請重新操作。');
+        return this.tasks.run(guildId, () => {
+            if (this.stopped || this.lifecycle !== lifecycle) throw new Error('播放器已停止或重新啟動，請重新操作。');
+            return task();
+        });
     }
     private checkEmpty(session: MusicSession): void {
         if (!session.active) return;
@@ -61,7 +75,7 @@ export class MusicPlayer {
     }
     async enqueueMany(channel: VoiceChannel, textChannel: GuildTextBasedChannel, userId: string, requestedBy: string, tracks: MusicTrack[], next = false): Promise<MusicSession> {
         if (!tracks.length || tracks.length > 100) throw new Error('一次請加入 1–100 首歌曲。');
-        return this.tasks.run(channel.guild.id, async () => {
+        return this.runTask(channel.guild.id, async () => {
             let session = this.get(channel.guild.id);
             if (session) {
                 this.assertListener(session, userId);
@@ -130,7 +144,7 @@ export class MusicPlayer {
             loading.channel.guild.voiceStates.cache.get(userId)?.channelId === loading.channel.id &&
             (!panel || (panel.sessionId === loading.id && panel.messageId === loading.panel.message?.id &&
                 (action !== 'skip' || panel.generation === loading.generation)))) loading.loadController?.abort('control');
-        return this.tasks.run(guildId, async () => {
+        return this.runTask(guildId, async () => {
             const session = panel ? this.assertPanel(guildId, panel.sessionId, panel.messageId) : this.get(guildId);
             if (!session?.active) throw new Error('目前沒有手動播放中的音樂。');
             this.assertListener(session, userId);
@@ -141,7 +155,7 @@ export class MusicPlayer {
         });
     }
     async editQueue(guildId: string, userId: string, sessionId: string, revision: number, action: 'remove' | 'move' | 'clear', from?: number, to?: number): Promise<void> {
-        return this.tasks.run(guildId, () => {
+        return this.runTask(guildId, () => {
             const session = this.get(guildId);
             if (!session?.active || session.id !== sessionId) throw new Error('播放已結束，請重新開啟佇列。');
             this.assertListener(session, userId);
@@ -153,7 +167,7 @@ export class MusicPlayer {
         });
     }
     async panel(guildId: string, textChannel: GuildTextBasedChannel, userId: string): Promise<string> {
-        return this.tasks.run(guildId, async () => {
+        return this.runTask(guildId, async () => {
             const session = this.get(guildId);
             if (!session?.active) throw new Error('目前沒有手動播放中的音樂。');
             if (session.panel.message) {

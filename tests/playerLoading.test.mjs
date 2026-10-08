@@ -55,3 +55,22 @@ test('late completion from replaced audio cannot advance the current song', asyn
     await player.tasks.run('guild', () => {});
     assert.equal(advances, 1);
 });
+
+test('shutdown cancels an in-flight load and does not start the remaining songs', async t => {
+    const { player, session } = fixture(t);
+    let started, attempts = 0;
+    const ready = new Promise(resolve => { started = resolve; });
+    load = async (_track, _volume, _error, controller) => {
+        attempts++; started();
+        await new Promise((_, reject) => controller.signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }));
+    };
+    const loading = player.tasks.run('guild', () => player.playback.advance(session, 'finished'));
+    await ready;
+    player.shutdown(); await loading;
+    assert.equal(attempts, 1);
+    assert.equal(session.failures, 0);
+    assert.equal(session.active, false);
+    assert.equal(session.status, 'ended');
+    assert.equal(session.loadController, undefined);
+    assert.equal(player.get('guild'), undefined);
+});
