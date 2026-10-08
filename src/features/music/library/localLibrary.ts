@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readdir, realpath, stat } from 'node:fs/promises';
 import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { parseFile } from 'music-metadata';
+import { UserActionError } from '../../../shared/logging/operationErrors.js';
 
 export const AUDIO_EXTENSIONS = new Set(['.webm', '.opus', '.ogg', '.m4a', '.mp3', '.wav']);
 export type { LocalTrack } from '../model/track.js';
@@ -76,10 +77,15 @@ export class LocalMusicLibrary {
         return this.all();
     }
     async playablePath(track: LocalTrack): Promise<string> {
-        const root = await realpath(this.root);
-        const actual = await realpath(track.path);
-        if (!isWithin(root, actual) || !(await stat(actual)).isFile()) throw new Error('音檔已移除或不在曲庫內。');
-        return actual;
+        try {
+            const root = await realpath(this.root);
+            const actual = await realpath(track.path);
+            if (!isWithin(root, actual) || !(await stat(actual)).isFile()) throw new UserActionError('音檔已移除或不在曲庫內。');
+            return actual;
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new UserActionError('音檔已移除，請重新開啟曲庫。');
+            throw error;
+        }
     }
 }
 export const musicLibrary = new LocalMusicLibrary();

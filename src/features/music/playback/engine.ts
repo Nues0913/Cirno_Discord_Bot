@@ -1,7 +1,8 @@
+import { UserActionError } from '../../../shared/logging/operationErrors.js';
 import { AudioPlayerStatus, createAudioPlayer, NoSubscriberBehavior } from '@discordjs/voice';
 import type { MusicSession } from './session.js';
 import { loadTrackAudio, type AudioLoader } from './source.js';
-import logger from '../../../shared/logging/logger.js';
+import { logOperationError } from '../../../shared/logging/logOperationError.js';
 
 interface PlaybackEvents {
     end(session: MusicSession, notice: string): void;
@@ -43,7 +44,7 @@ export class PlaybackEngine {
             this.attachPlayer(session, token, paused);
         } catch (error) {
             if (!session.active || session.generation !== token || session.loadController?.signal.reason === 'control') return;
-            logger.error(error);
+            logOperationError(error);
             await this.advance(session, 'error');
         }
     }
@@ -61,7 +62,7 @@ export class PlaybackEngine {
                 const offset = action === 'restart' ? 0 : Number(value);
                 const duration = session.queue.current?.track.duration;
                 if (!Number.isFinite(offset) || offset < 0 || (offset > 0 && (!duration || offset >= duration))) {
-                    throw new Error('請輸入小於歌曲總長的秒數；總長未知的歌曲只能從頭播放。');
+                    throw new UserActionError('請輸入小於歌曲總長的秒數；總長未知的歌曲只能從頭播放。');
                 }
                 const paused = session.status === 'paused';
                 session.failures = 0; session.notice = undefined;
@@ -69,11 +70,11 @@ export class PlaybackEngine {
             }
             case 'volume': {
                 const volume = Number(value);
-                if (!Number.isInteger(volume) || volume < 0 || volume > 100) throw new Error('音量須介於 0–100。');
+                if (!Number.isInteger(volume) || volume < 0 || volume > 100) throw new UserActionError('音量須介於 0–100。');
                 session.volume = volume; session.audio?.resource.volume?.setVolume(volume / 100); break;
             }
             case 'repeatMode':
-                if (value !== 'off' && value !== 'one' && value !== 'all') throw new Error('無效的循環模式。');
+                if (value !== 'off' && value !== 'one' && value !== 'all') throw new UserActionError('無效的循環模式。');
                 session.queue.repeat = value; break;
             case 'repeat': session.queue.cycleRepeat(); break;
             case 'shuffle': session.queue.shuffle(); break;
@@ -85,8 +86,8 @@ export class PlaybackEngine {
     }
     setPaused(session: MusicSession, paused: boolean): void {
         if (paused && session.status === 'paused' || !paused && session.status === 'playing') return;
-        if (paused && session.status !== 'playing' || !paused && session.status !== 'paused') throw new Error('歌曲仍在載入中，請稍後再試。');
-        if (paused ? !session.player?.pause() : !session.player?.unpause()) throw new Error('目前無法變更播放狀態。');
+        if (paused && session.status !== 'playing' || !paused && session.status !== 'paused') throw new UserActionError('歌曲仍在載入中，請稍後再試。');
+        if (paused ? !session.player?.pause() : !session.player?.unpause()) throw new UserActionError('目前無法變更播放狀態。');
         session.status = paused ? 'paused' : 'playing';
         clearTimeout(session.pauseTimer); session.pauseTimer = undefined;
         if (paused) session.pauseTimer = setTimeout(() => {

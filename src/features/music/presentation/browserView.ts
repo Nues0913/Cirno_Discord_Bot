@@ -1,3 +1,4 @@
+import { UserActionError } from '../../../shared/logging/operationErrors.js';
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelectMenuBuilder } from 'discord.js';
 import { isRemoteTrack, type MusicTrack } from '../model/track.js';
 import type { MusicSession } from '../playback/session.js';
@@ -5,7 +6,7 @@ import type { Browser } from './browserState.js';
 import { displayText, durationText } from './panel.js';
 
 export function renderBrowserView(key: string, browser: Browser, tracks: MusicTrack[], session?: MusicSession) {
-    if (browser.kind === 'queue' && (!session || session.id !== browser.sessionId)) throw new Error('播放已結束，請重新使用 /music queue。');
+    if (browser.kind === 'queue' && (!session || session.id !== browser.sessionId)) throw new UserActionError('播放已結束，請重新使用 /music queue。');
     const items = browser.kind === 'library' ? tracks : session!.queue.pending;
     const pageSize = browser.kind === 'library' ? 25 : 10;
     const pages = Math.max(1, Math.ceil(items.length / pageSize));

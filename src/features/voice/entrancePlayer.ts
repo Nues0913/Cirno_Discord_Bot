@@ -25,7 +25,7 @@ export function registerVoiceEntrancePlayer(client: Client): () => void {
     const start = async (channel: VoiceBasedChannel, lease: VoiceLease) => {
         try {
             const files = findAudioFiles();
-            if (!files.length) { logger.error('Voice entrance audio is missing. Add files to assets/songs or set VOICE_AUDIO_DIRECTORY.'); lease.release(); return; }
+            if (!files.length) { logger.warn('Voice entrance audio is missing. Add files to assets/songs or set VOICE_AUDIO_DIRECTORY.'); lease.release(); return; }
             const previous = lastFiles.get(channel.guild.id);
             const file = files[((previous ? files.indexOf(previous) : -1) + 1) % files.length];
             lastFiles.set(channel.guild.id, file);

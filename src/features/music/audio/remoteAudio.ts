@@ -1,3 +1,4 @@
+import { ConfigurationError } from '../../../shared/logging/operationErrors.js';
 import { randomUUID, createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
@@ -45,7 +46,7 @@ function decodedAudioBuffer(): Transform {
     const configured = process.env.REMOTE_MUSIC_BUFFER_SECONDS?.trim();
     const seconds = configured === undefined || configured === '' ? 3 : Number(configured);
     if (!Number.isFinite(seconds) || seconds < 0 || seconds > 10) {
-        throw new Error('REMOTE_MUSIC_BUFFER_SECONDS 必須介於 0 到 10 秒。');
+        throw new ConfigurationError('REMOTE_MUSIC_BUFFER_SECONDS 必須介於 0 到 10 秒。');
     }
     const target = Math.ceil(seconds * PCM_BYTES_PER_SECOND);
     let pending: Buffer[] = [];

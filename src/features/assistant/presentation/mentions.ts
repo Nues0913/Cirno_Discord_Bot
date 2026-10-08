@@ -1,7 +1,7 @@
 import { Events, type Client, type Message } from 'discord.js';
 import { generateNvidiaNimReply } from '../reply.js';
 import { StreamingReply } from './streamingReply.js';
-import logger from '../../../shared/logging/logger.js';
+import { logInteractionError } from '../../../shared/discord/interactionErrors.js';
 
 async function handleMention(client: Client, message: Message): Promise<void> {
     if (message.author.bot || !client.user || !message.mentions.users.has(client.user.id)) return;
@@ -13,10 +13,10 @@ async function handleMention(client: Client, message: Message): Promise<void> {
     const response = await message.reply({ content: '正在思考…', allowedMentions: { parse: [], repliedUser: false } });
     const reply = new StreamingReply(message, response);
     try { await reply.complete(await generateNvidiaNimReply(prompt, reply.update, reply.update)); }
-    catch (error) { logger.error(error); await reply.fail(); }
+    catch (error) { logInteractionError(error); await reply.fail(); }
 }
 export function registerMentions(client: Client): () => void {
-    const listener = (message: Message) => { void handleMention(client, message).catch(error => logger.error(error)); };
+    const listener = (message: Message) => { void handleMention(client, message).catch(logInteractionError); };
     client.on(Events.MessageCreate, listener);
     return () => { client.off(Events.MessageCreate, listener); };
 }

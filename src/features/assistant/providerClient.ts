@@ -2,6 +2,7 @@ import type { ChatMessage, ToolCall, NvidiaNimErrorResponse } from './model.js';
 import { getPositiveInteger, getErrorMessage } from './config.js';
 import { DIRECT_FETCH_TOOL, WEB_SEARCH_TOOL } from './tools.js';
 import { readCompletionStream } from './protocol.js';
+import { ConfigurationError } from '../../shared/logging/operationErrors.js';
 
 const DEFAULT_NVIDIA_NIM_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
 const DEFAULT_NVIDIA_NIM_MODEL = 'openai/gpt-oss-20b';
@@ -15,7 +16,7 @@ export async function streamCompletion(
 ): Promise<{ content: string; reasoningContent: string; toolCalls: ToolCall[] }> {
     const apiKey = process.env.NVIDIA_API_KEY;
     if (!apiKey) {
-        throw new Error('NVIDIA_API_KEY is not configured.');
+        throw new ConfigurationError('NVIDIA_API_KEY is not configured.');
     }
 
     const response = await fetch(

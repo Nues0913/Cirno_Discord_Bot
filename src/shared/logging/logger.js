@@ -104,6 +104,8 @@ const logger = new Proxy(baseLogger, {
                 if (args[0] instanceof Error) {
                     const err = args[0];
                     const wrappedErr = Object.assign(new Error(), err);
+                    wrappedErr.name = err.name;
+                    wrappedErr.stack = err.stack;
                     wrappedErr.message = `[${module}] ${err.message}`;
                     return target[prop](wrappedErr);
                 }
@@ -112,6 +114,8 @@ const logger = new Proxy(baseLogger, {
                 if (typeof args[0] === 'string' && args[1] instanceof Error) {
                     const err = args[1];
                     const wrappedErr = Object.assign(new Error(), err);
+                    wrappedErr.name = err.name;
+                    wrappedErr.stack = err.stack;
                     wrappedErr.message = `[${module}] ${args[0]}: ${err.message}`;
                     return target[prop](wrappedErr);
                 }

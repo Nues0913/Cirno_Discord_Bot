@@ -217,3 +217,7 @@ NVIDIA_NIM_URL=https://integrate.api.nvidia.com/v1/chat/completions
 ## 程式架構
 
 模組責任、依賴方向、資源所有權與驗證方式見 [架構說明](docs/architecture.md)。
+
+## 日誌分級
+
+使用者輸入無效、面板過期及操作條件不符記為 INFO；設定、權限或 Discord 互動異常記為 WARN；內部錯誤、後端通訊失敗及串流／解碼失敗記為 ERROR。ERROR 保留原始錯誤堆疊。完整規則、檔案輸出與 `LOG_LEVEL` 設定見 [日誌說明](src/shared/logging/README.md)。

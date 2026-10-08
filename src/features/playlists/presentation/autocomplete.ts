@@ -11,7 +11,10 @@ export async function completePlaylist(interaction: AutocompleteInteraction): Pr
             const all = await playlists.list(interaction.user.id);
             await interaction.respond(all.filter(p => p.name.toLocaleLowerCase().includes(query)).slice(0, 25).map(p => ({ name: `${p.name} · ${p.entries.length} 首`, value: p.id })));
         } else if (focus.name === 'entry') {
-            const p = await playlists.get(interaction.user.id, interaction.options.getString('playlist', true));
+            const playlistId = interaction.options.getString('playlist');
+            // Discord can request entry suggestions before the playlist has been selected.
+            if (!playlistId) { await interaction.respond([]); return; }
+            const p = await playlists.get(interaction.user.id, playlistId);
             await interaction.respond(p.entries.map((e, i) => ({ name: `${i + 1}. ${e.title} · ${e.source === 'remote' ? '遠端' : '本地'}`.slice(0, 100), value: e.entryId }))
                 .filter(e => e.name.toLocaleLowerCase().includes(query)).slice(0, 25));
         } else if (focus.name === 'song') {

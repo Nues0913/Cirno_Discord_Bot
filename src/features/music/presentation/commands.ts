@@ -1,3 +1,4 @@
+import { UserActionError } from '../../../shared/logging/operationErrors.js';
 import { MessageFlags, type ChatInputCommandInteraction, type Interaction, type ButtonInteraction, type StringSelectMenuInteraction } from 'discord.js';
 import { musicLibrary } from '../library/localLibrary.js';
 import { getRemoteSong, searchRemoteSongs } from '../library/remoteLibrary.js';
@@ -12,7 +13,7 @@ import { playTracks, textChannel, type MusicInteraction } from './playbackAction
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
-        if (!interaction.guildId || !interaction.guild) throw new Error('請在伺服器內使用此指令。');
+        if (!interaction.guildId || !interaction.guild) throw new UserActionError('請在伺服器內使用此指令。');
         const subcommand = interaction.options.getSubcommand();
         if (['pause', 'resume', 'skip', 'previous', 'restart', 'seek', 'volume', 'repeat', 'shuffle'].includes(subcommand)) {
             const action = subcommand === 'pause' ? 'pauseOnly' : subcommand === 'repeat' ? 'repeatMode' : subcommand;
@@ -24,7 +25,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
         }
         if (subcommand === 'remove' || subcommand === 'move' || subcommand === 'clear') {
             const session = musicPlayer.get(interaction.guildId);
-            if (!session) throw new Error('目前沒有播放中的音樂。');
+            if (!session) throw new UserActionError('目前沒有播放中的音樂。');
             await musicPlayer.editQueue(interaction.guildId, interaction.user.id, session.id, session.queue.revision, subcommand,
                 interaction.options.getInteger(subcommand === 'remove' ? 'position' : 'from') ?? undefined,
                 interaction.options.getInteger('to') ?? undefined);
@@ -36,7 +37,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
                 if (source === 'local') await musicLibrary.load();
                 const query = interaction.options.getString('song', true);
                 const matches = await findTracks(source, query);
-                if (!matches.length) throw new Error('找不到此歌曲，請使用 /music library 查看曲庫。');
+                if (!matches.length) throw new UserActionError('找不到此歌曲，請使用 /music library 查看曲庫。');
                 if (matches.length > 1) {
                     await interaction.editReply(await createBrowser(interaction, 'library', query, source, interaction.options.getBoolean('next') ?? false)); return;
                 }
@@ -93,7 +94,7 @@ export async function handleMusicInteraction(interaction: Interaction): Promise<
     if (!(interaction.isButton() || interaction.isStringSelectMenu()) ||
         !(interaction.customId.startsWith('music:') || interaction.customId.startsWith('musicbrowse:'))) return false;
     try {
-        if (!interaction.guildId || !interaction.guild) throw new Error('請在伺服器內操作播放器。');
+        if (!interaction.guildId || !interaction.guild) throw new UserActionError('請在伺服器內操作播放器。');
         const [prefix, key, action, generation] = interaction.customId.split(':');
         if (prefix === 'musicbrowse') await handleBrowserInteraction(interaction, key, action);
         else await handlePanelInteraction(interaction, key, action, generation);
@@ -102,33 +103,33 @@ export async function handleMusicInteraction(interaction: Interaction): Promise<
 }
 
 async function handleBrowserInteraction(interaction: ButtonInteraction | StringSelectMenuInteraction, key: string, action: string): Promise<void> {
-    if (!interaction.guildId) throw new Error('請在伺服器內操作播放器。');
+    if (!interaction.guildId) throw new UserActionError('請在伺服器內操作播放器。');
     browsers.prune();
     const browser = browsers.get(key);
-    if (!browser || browser.userId !== interaction.user.id || browser.guildId !== interaction.guildId) throw new Error('選單已失效，請重新使用 /music library 或 /music queue。');
+    if (!browser || browser.userId !== interaction.user.id || browser.guildId !== interaction.guildId) throw new UserActionError('選單已失效，請重新使用 /music library 或 /music queue。');
     if (action === 'select' && interaction.isStringSelectMenu() && browser.kind === 'library') {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        if (browser.sessionId && musicPlayer.get(browser.guildId)?.id !== browser.sessionId) throw new Error('原播放已結束，請重新開啟曲庫。');
+        if (browser.sessionId && musicPlayer.get(browser.guildId)?.id !== browser.sessionId) throw new UserActionError('原播放已結束，請重新開啟曲庫。');
         const id = interaction.values[0];
         const track = browser.source === 'remote'
             ? browser.remotePages.get(browser.page)?.items.some(item => item.id === id) ? await getRemoteSong(id) : undefined
             : browser.ids.includes(id) ? musicLibrary.get(id) : undefined;
-        if (!track) throw new Error('歌曲已移除，請重新開啟曲庫。');
+        if (!track) throw new UserActionError('歌曲已移除，請重新開啟曲庫。');
         await interaction.editReply({ content: await playTracks(interaction, [track], browser.next), allowedMentions: { parse: [] } });
     } else if (interaction.isButton() && ['prev', 'next'].includes(action)) {
         await interaction.deferUpdate();
         const nextPage = action === 'next' ? browser.page + 1 : Math.max(0, browser.page - 1);
         if (browser.source === 'remote' && browser.kind === 'library' && action === 'next') {
             const cursor = browser.remotePages.get(browser.page)?.nextCursor;
-            if (!cursor) throw new Error('已到最後一頁。');
+            if (!cursor) throw new UserActionError('已到最後一頁。');
             if (!browser.remotePages.has(nextPage)) browser.remotePages.set(nextPage, await searchRemoteSongs(browser.query, cursor));
         }
         browser.page = nextPage;
         await interaction.editReply(renderBrowser(key, browser));
-    } else throw new Error('無效的選單操作。');
+    } else throw new UserActionError('無效的選單操作。');
 }
 async function handlePanelInteraction(interaction: ButtonInteraction | StringSelectMenuInteraction, key: string, action: string, generation: string): Promise<void> {
-    if (!interaction.guildId) throw new Error('請在伺服器內操作播放器。');
+    if (!interaction.guildId) throw new UserActionError('請在伺服器內操作播放器。');
     musicPlayer.assertPanel(interaction.guildId, key, interaction.message.id);
     if (action === 'library' || action === 'queue') {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });

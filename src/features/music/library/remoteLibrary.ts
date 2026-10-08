@@ -1,5 +1,6 @@
 import type { RemoteTrack } from '../model/track.js';
 import { remoteMusicApiSettings } from '../../../shared/http/musicApi.js';
+import { UserActionError, ConfigurationError } from '../../../shared/logging/operationErrors.js';
 export type { RemoteTrack } from '../model/track.js';
 
 export interface RemotePage { items: RemoteTrack[]; nextCursor?: string; }
@@ -44,7 +45,7 @@ async function request(path: string, query?: URLSearchParams, timeoutMs = 8000):
     }
     if (!response.ok) {
         await response.body?.cancel();
-        if (response.status === 404) throw new Error('遠端歌曲已移除，請重新開啟曲庫。');
+        if (response.status === 404 && path !== 'v1/songs') throw new UserActionError('遠端歌曲已移除，請重新開啟曲庫。');
         if (response.status === 401) throw new Error('遠端曲庫驗證失敗，請檢查 API token。');
         throw new Error(`遠端曲庫暫時無法使用（HTTP ${response.status}）。`);
     }
@@ -52,7 +53,7 @@ async function request(path: string, query?: URLSearchParams, timeoutMs = 8000):
 }
 
 export async function searchRemoteSongs(query = '', cursor?: string, limit = 25, timeoutMs = 8000): Promise<RemotePage> {
-    if (cursor && !UUID.test(cursor)) throw new Error('遠端曲庫游標無效。');
+    if (cursor && !UUID.test(cursor)) throw new UserActionError('遠端曲庫游標無效。');
     const params = new URLSearchParams({ limit: String(Math.max(1, Math.min(25, limit))) });
     if (query.trim()) params.set('query', query.trim().slice(0, 200));
     if (cursor) params.set('cursor', cursor);
@@ -66,13 +67,13 @@ export async function searchRemoteSongs(query = '', cursor?: string, limit = 25,
 }
 
 export async function getRemoteSong(id: string): Promise<RemoteTrack> {
-    if (!UUID.test(id)) throw new Error('遠端歌曲 ID 無效。');
+    if (!UUID.test(id)) throw new UserActionError('遠端歌曲 ID 無效。');
     const response = await request(`v1/songs/${id}`);
     return parseTrack(await response.json());
 }
 
 export async function openRemoteAudio(id: string, controller: AbortController): Promise<Response> {
-    if (!UUID.test(id)) throw new Error('遠端歌曲 ID 無效。');
+    if (!UUID.test(id)) throw new UserActionError('遠端歌曲 ID 無效。');
     const { token } = remoteMusicApiSettings();
     const timeout = setTimeout(() => controller.abort(), 15_000);
     try {
@@ -82,7 +83,8 @@ export async function openRemoteAudio(id: string, controller: AbortController): 
         });
         if (response.status !== 200 || !response.body) {
             await response.body?.cancel();
-            throw new Error(response.status === 404 ? '遠端音檔已移除。' : `遠端音檔無法讀取（HTTP ${response.status}）。`);
+            if (response.status === 404) throw new UserActionError('遠端音檔已移除。');
+            throw new Error(`遠端音檔無法讀取（HTTP ${response.status}）。`);
         }
         return response;
     } catch (error) {
@@ -95,6 +97,6 @@ export async function openRemoteAudio(id: string, controller: AbortController): 
 
 export function remoteMusicMode(): 'stream' | 'download' {
     const mode = process.env.REMOTE_MUSIC_MODE?.trim() || 'stream';
-    if (mode !== 'stream' && mode !== 'download') throw new Error('REMOTE_MUSIC_MODE 只能是 stream 或 download。');
+    if (mode !== 'stream' && mode !== 'download') throw new ConfigurationError('REMOTE_MUSIC_MODE 只能是 stream 或 download。');
     return mode;
 }

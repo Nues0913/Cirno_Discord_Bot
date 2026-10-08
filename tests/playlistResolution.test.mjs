@@ -19,8 +19,10 @@ async function fixture(t) {
     const keys = ['MUSIC_AUDIO_DIRECTORY', 'REMOTE_MUSIC_API_URL', 'REMOTE_MUSIC_API_TOKEN'];
     const previous = keys.map(key => process.env[key]);
     const requests = [];
+    const failure = { status: undefined };
     const server = createServer((request, response) => {
         requests.push(request.url);
+        if (failure.status) { response.writeHead(failure.status).end(); return; }
         if (request.headers.authorization !== 'Bearer resolution-fixture-token') {
             response.writeHead(401).end(); return;
         }
@@ -48,7 +50,7 @@ async function fixture(t) {
     t.mock.method(musicLibrary, 'get', () => { throw Error('A failed scan must not use cached local tracks'); });
     const errors = [];
     t.mock.method(logger, 'error', error => errors.push(error));
-    return { requests, errors, remote: id => ({ source: 'remote', id, title: id, library: process.env.REMOTE_MUSIC_API_URL }) };
+    return { requests, errors, failure, remote: id => ({ source: 'remote', id, title: id, library: process.env.REMOTE_MUSIC_API_URL }) };
 }
 
 test('remote-only playlists resolve in order with duplicates without scanning an unavailable local directory', async t => {
@@ -94,4 +96,18 @@ test('an empty playlist does not access either library', async t => {
     assert.deepEqual(await resolvePlaylist([]), { tracks: [], unavailable: [] });
     assert.equal(musicLibrary.load.mock.callCount(), 0);
     assert.equal(requests.length, 0);
+});
+
+test('skipping saved remote songs does not hide server failures or remove saved entries', async t => {
+    const { errors, failure, remote } = await fixture(t);
+    const saved = [remote(first)];
+    for (const status of [503, 401]) {
+        failure.status = status;
+        const result = await resolvePlaylist(saved);
+        assert.deepEqual(result.tracks, []);
+        assert.deepEqual(result.unavailable, saved);
+        assert.equal(errors.length, status === 503 ? 1 : 2);
+    }
+    assert.match(errors[0].message, /HTTP 503/);
+    assert.match(errors[1].message, /驗證失敗/);
 });

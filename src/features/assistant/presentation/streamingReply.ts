@@ -1,6 +1,6 @@
 import type { Message } from 'discord.js';
 import { splitDiscordMessage } from '../../../shared/discord/messages.js';
-import logger from '../../../shared/logging/logger.js';
+import { logInteractionError } from '../../../shared/discord/interactionErrors.js';
 
 export class StreamingReply {
     private latestAnswer = '';
@@ -18,7 +18,7 @@ export class StreamingReply {
             if (!preview || preview === this.lastRenderedAnswer) return;
             await this.response.edit({ content: preview, allowedMentions: { parse: [] } });
             this.lastRenderedAnswer = preview;
-        }).catch(error => { logger.error(error); });
+        }).catch(logInteractionError);
     };
     async complete(answer: string): Promise<void> {
         await this.edits;

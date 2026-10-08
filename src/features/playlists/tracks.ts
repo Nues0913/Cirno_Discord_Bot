@@ -1,6 +1,6 @@
 import { musicLibrary, getRemoteSong, remoteLibraryKey, isRemoteTrack, type MusicTrack } from '../music/api.js';
 import type { SavedTrack } from './model.js';
-import logger from '../../shared/logging/logger.js';
+import { logOperationError } from '../../shared/logging/logOperationError.js';
 
 export function saveTrack(track: MusicTrack): SavedTrack {
     return { source: isRemoteTrack(track) ? 'remote' : 'local', id: track.id, title: track.title.slice(0, 500), artist: track.artist?.slice(0, 500),
@@ -9,7 +9,7 @@ export function saveTrack(track: MusicTrack): SavedTrack {
 export async function resolvePlaylist(tracks: SavedTrack[]): Promise<{ tracks: MusicTrack[]; unavailable: SavedTrack[] }> {
     // Local availability must not prevent independent remote entries from resolving.
     const localLibraryReady = tracks.some(track => track.source === 'local')
-        ? musicLibrary.load().then(() => true, error => { logger.error(error); return false; })
+        ? musicLibrary.load().then(() => true, error => { logOperationError(error); return false; })
         : Promise.resolve(false);
     const resolved: Array<MusicTrack | undefined> = new Array(tracks.length);
     let cursor = 0;
@@ -26,7 +26,10 @@ export async function resolvePlaylist(tracks: SavedTrack[]): Promise<{ tracks: M
                     const track = musicLibrary.get(reference.id);
                     if (track) { await musicLibrary.playablePath(track); resolved[index] = track; }
                 }
-            } catch { /* Unavailable entries remain saved so they can be repaired or retried. */ }
+            } catch (error) {
+                // Keep unavailable entries saved, but do not hide transport/internal failures.
+                logOperationError(error);
+            }
         }
     }));
     return { tracks: resolved.filter((t): t is MusicTrack => !!t), unavailable: tracks.filter((_, i) => !resolved[i]) };

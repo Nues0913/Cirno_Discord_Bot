@@ -1,3 +1,4 @@
+import { UserActionError } from '../../shared/logging/operationErrors.js';
 import type { Playlist } from './model.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -14,6 +15,6 @@ export function validatePlaylist(value: unknown, owner: string, id?: string): Pl
 }
 
 export function validatePlaylistId(id: string): string {
-    if (!UUID.test(id)) throw new Error('播放清單或歌曲項目 ID 無效。');
+    if (!UUID.test(id)) throw new UserActionError('播放清單或歌曲項目 ID 無效。');
     return id;
 }

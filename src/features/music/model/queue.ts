@@ -1,3 +1,4 @@
+import { UserActionError } from '../../../shared/logging/operationErrors.js';
 import { trackKey, type MusicTrack } from './track.js';
 export type RepeatMode = 'off' | 'one' | 'all';
 export interface QueueEntry { track: MusicTrack; requestedBy: string; }
@@ -9,7 +10,7 @@ export class MusicQueue {
     revision = 0;
     add(entry: QueueEntry): void { this.addMany([entry]); }
     addMany(entries: QueueEntry[], next = false): void {
-        if (this.pending.length + entries.length > 100) throw new Error('待播佇列最多 100 首，未加入任何歌曲。');
+        if (this.pending.length + entries.length > 100) throw new UserActionError('待播佇列最多 100 首，未加入任何歌曲。');
         if (next) this.pending.unshift(...entries); else this.pending.push(...entries);
         this.revision++;
     }
@@ -25,13 +26,13 @@ export class MusicQueue {
     }
     clearPending(): void { this.pending = []; this.revision++; }
     private position(value: number): void {
-        if (!Number.isInteger(value) || value < 1 || value > this.pending.length) throw new Error('位置超出待播佇列範圍。');
+        if (!Number.isInteger(value) || value < 1 || value > this.pending.length) throw new UserActionError('位置超出待播佇列範圍。');
     }
     previous(): QueueEntry {
-        if (!this.history.length) throw new Error('沒有上一首播放紀錄。');
+        if (!this.history.length) throw new UserActionError('沒有上一首播放紀錄。');
         const previous = this.history[this.history.length - 1];
         const rotated = this.pending.lastIndexOf(previous);
-        if (this.current && this.pending.length >= 100 && rotated < 0) throw new Error('待播佇列已滿，請先移除一首再回上一首。');
+        if (this.current && this.pending.length >= 100 && rotated < 0) throw new UserActionError('待播佇列已滿，請先移除一首再回上一首。');
         // Undo the previous repeat-all rotation rather than accumulating duplicates.
         if (rotated >= 0) this.pending.splice(rotated, 1);
         if (this.current) this.pending.unshift(this.current);
