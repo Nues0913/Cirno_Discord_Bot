@@ -19,7 +19,7 @@ export function renderBrowserView(key: string, browser: Browser, tracks: MusicTr
     const components: Array<ActionRowBuilder<StringSelectMenuBuilder> | ActionRowBuilder<ButtonBuilder>> = [];
     if (browser.kind === 'library') {
         embed.setDescription(items.length ? `選擇歌曲即可加入播放。${browser.query ? `\n搜尋：${displayText(browser.query)}` : ''}` :
-            browser.source === 'remote' ? '遠端曲庫沒有符合的歌曲。' : '找不到歌曲。請調整關鍵字，或由管理者將音檔放入曲庫後執行 /music reload。');
+            browser.source === 'remote' ? '遠端曲庫沒有符合的歌曲。' : '找不到歌曲。請調整關鍵字，或由管理者將音檔放入曲庫後執行 /music reload source:local。');
         const slice = browser.source === 'remote' ? tracks : tracks.slice(offset, offset + pageSize);
         if (slice.length) components.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
             new StringSelectMenuBuilder().setCustomId(`musicbrowse:${key}:select`).setPlaceholder('選一首歌曲加入播放')

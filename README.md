@@ -1,6 +1,6 @@
 # Cirno Discord Bot
 
-Cirno Discord Bot 是一個 Discord 機器人，提供偵測語音頻道福音傳播(爛音樂)、本地音樂播放器、音樂資料庫串聯、複製文管理，以及 線上語言模型串聯功能。
+Cirno Discord Bot 是一個 Discord 機器人，提供偵測語音頻道福音傳播(爛音樂)、預設使用遠端曲庫的音樂播放器、音樂資料庫串聯、複製文管理，以及 線上語言模型串聯功能。
 
 
 ## 安裝與啟動
@@ -29,12 +29,12 @@ TAVILY_API_KEY=your_tavily_api_key
 
 ## 音樂播放器（本地與遠端）
 
-將音檔放入 Bot 主機的 `assets/songs/`，加入一般語音頻道後使用 `/music play song:歌曲`。播放器透過 FFmpeg 解碼本地音檔。
+音樂與個人清單共用 `REMOTE_MUSIC_API_URL`、`REMOTE_MUSIC_API_TOKEN`。加入一般語音頻道後使用 `/music play song:歌曲`，省略 `source` 時使用遠端曲庫。本地音檔放在 Bot 主機的 `assets/songs/`，使用時明確指定 `source:local`。
 
 | 指令 | 用途 |
 | --- | --- |
-| `/music play song:歌曲 source:local/remote next:true` | 自動完成選歌；沒有播放時開始，有播放時加入佇列；`next:true` 排在待播首位 |
-| `/music library query:關鍵字` | 搜尋／分頁瀏覽曲庫，關鍵字可省略 |
+| `/music play song:歌曲 source:remote/local next:true` | 預設遠端，自動完成選歌；沒有播放時開始，有播放時加入佇列；`next:true` 排在待播首位 |
+| `/music library query:關鍵字` | 預設搜尋／分頁瀏覽遠端曲庫，關鍵字可省略 |
 | `/music queue` | 查看待播清單及點歌者 |
 | `/music panel` | 取得面板連結；面板被刪除時，由同語音頻道成員重建 |
 | `/music pause`、`/music resume` | 暫停／繼續，重複執行不會反向切換 |
@@ -48,7 +48,7 @@ TAVILY_API_KEY=your_tavily_api_key
 | `/music move from:3 to:1` | 將第 3 首待播歌曲移到下一首 |
 | `/music clear` | 清空待播佇列，保留目前歌曲與循環模式 |
 | `/music stop` | 停止、清空佇列並離開 |
-| `/music reload` | 手動重新掃描曲庫，所有伺服器成員皆可使用，無需加入語音頻道 |
+| `/music reload` | 重新讀取並顯示遠端曲庫；`source:local` 重新掃描本地，無需加入語音頻道 |
 
 公開面板提供暫停／繼續、上一首、下一首、從頭播放、循環（關閉／單曲／佇列）、打亂待播、選歌、佇列、音量及結束播放。曲庫與完整佇列只對操作的人顯示；曲庫每頁最多 25 首，佇列每頁 10 首。選單有效 15 分鐘，`!reload` 後請重新開啟個人選單；共用播放工作階段繼續運作。
 
@@ -65,7 +65,7 @@ TAVILY_API_KEY=your_tavily_api_key
 
 手動工作階段期間（包含暫停與連線中），該伺服器的進場音樂觸發會暫時略過；結束後恢復監聽新的進場事件，不補播。不同伺服器互相獨立，手動點歌不改變進場曲序。
 
-曲庫僅掃描目錄第一層，支援 `.webm`、`.opus`、`.ogg`、`.m4a`、`.mp3`、`.wav`。讀取標題、演出者與時長；缺少標籤時使用檔名。新增、移除或修改音檔後，等檔案複製完成再執行 `/music reload`。更新後重新開啟曲庫選單或輸入點歌搜尋，即可看到最新歌曲。Bot 啟動時會掃描一次，運行中不監聽目錄，也不定期補查；多人同時執行 reload 會共用同一次進行中的掃描。拒絕指向曲庫外的符號連結，不接受使用者輸入任意檔案路徑。
+曲庫僅掃描目錄第一層，支援 `.webm`、`.opus`、`.ogg`、`.m4a`、`.mp3`、`.wav`。讀取標題、演出者與時長；缺少標籤時使用檔名。新增、移除或修改本地音檔後，等檔案複製完成再執行 `/music reload source:local`。更新後重新開啟曲庫選單或輸入點歌搜尋，即可看到最新歌曲。播放器首次使用本地來源或解析既有本地收藏時才掃描，運行中不監聽目錄，也不定期補查；多人同時執行 reload 會共用同一次進行中的掃描。拒絕指向曲庫外的符號連結，不接受使用者輸入任意檔案路徑。
 
 Bot 在語音頻道需要「查看頻道」「連線」「說話」；面板所在文字頻道需要「查看頻道」「傳送訊息」「嵌入連結」，討論串則需傳送討論串訊息權限。初版支援一般語音頻道，不支援 Stage 頻道或私訊播放。
 
@@ -81,7 +81,7 @@ Bot 在語音頻道需要「查看頻道」「連線」「說話」；面板所�
 | `/playlist show playlist:通勤` | 每頁 10 首，按鈕翻頁 |
 | `/playlist rename playlist:通勤 name:下班` | 改名，自己的清單名稱不能重複 |
 | `/playlist delete playlist:下班` | 顯示確認／取消按鈕；確認後刪除收藏，不刪音檔 |
-| `/playlist add playlist:通勤 source:local/remote song:歌曲` | 從歌曲自動完成選單加入；遠端請先選來源 |
+| `/playlist add playlist:通勤 source:remote/local song:歌曲` | 預設從遠端歌曲自動完成選單加入；本地請先選 `source:local` |
 | `/playlist add-current playlist:通勤` | 收藏目前播放的歌曲 |
 | `/playlist remove playlist:通勤 entry:歌曲` | 從自動完成選擇要移除的項目，重複歌曲可分別處理 |
 | `/playlist move playlist:通勤 entry:歌曲 position:1` | 調整清單中的順序 |
@@ -138,9 +138,9 @@ REMOTE_MUSIC_BUFFER_SECONDS=3
 
 網址必須指向能傳送音檔的 Nginx 入口；本機 Docker Compose 預設為 `http://127.0.0.1/`，直接連 Fastify 埠只會收到 `X-Accel-Redirect` 標頭。Token 使用 `music_server` 根目錄 `.env` 的 `API_TOKEN`，歌曲與個人清單共用此金鑰；上傳管理使用另外的 `ADMIN_TOKEN`。Bot 搬到另一台主機時，須將網址改成可連通的 HTTPS 或私有 VPN 入口；`127.0.0.1` 只指向 Bot 自己所在的主機。
 
-使用 `/music library source:remote` 瀏覽遠端曲庫；使用 `/music play source:remote song:歌曲` 搜尋並點播。輸入歌曲前先選擇 `source:remote`，自動完成才會顯示遠端結果。未選來源時維持本地曲庫。本地與遠端歌曲可加入同一佇列，共用面板與控制規則；面板的「選歌」按鈕會開啟目前歌曲所屬的曲庫。
+`/music play`、`/music library`、`/music reload`、`/playlist add` 及歌曲自動完成在省略 `source` 時都使用遠端曲庫。面板的「選歌」按鈕也固定預設開啟遠端曲庫，即使目前播放的是本地歌曲。明確指定 `source:local` 才會使用本地曲庫；本地與遠端歌曲仍可加入同一佇列及清單，既有收藏依原來源播放。遠端服務未設定或無法使用時會回報錯誤，不會自動切換成本地曲庫。進場音樂維持原本的本地音檔設定。
 
-`REMOTE_MUSIC_MODE=stream`（預設）會邊接收邊播放。M4A（MP4 容器）可能需要回頭讀取檔案，因此即使選擇串流模式，也會自動下載並驗證整首音檔後播放；其他格式不將整首歌存到 Bot 主機。串流模式預設先緩衝約 3 秒解碼後的音訊再開始播放，可用 `REMOTE_MUSIC_BUFFER_SECONDS` 設為 0–10 秒；設大會增加開始播放的等待時間與每條串流的記憶體用量，對持續低於播放速度的網路無法補救。`download` 會先下載並驗證整首音檔，再從暫存檔播放，結束後刪除。下載及 M4A 自動下載使用的暫存目錄預設為 `data/remote-music-cache/`，可用 `REMOTE_MUSIC_CACHE_DIRECTORY` 修改，需預留音檔大小的磁碟空間。下載若連續 15 秒未收到資料，會取消並清理暫存；持續有進度的下載不受 15 秒總時長限制。`/music reload` 只重掃本地曲庫；遠端歌曲在 `music_server` 匯入或停用後由 API 即時反映。
+`REMOTE_MUSIC_MODE=stream`（預設）會邊接收邊播放。M4A（MP4 容器）可能需要回頭讀取檔案，因此即使選擇串流模式，也會自動下載並驗證整首音檔後播放；其他格式不將整首歌存到 Bot 主機。串流模式預設先緩衝約 3 秒解碼後的音訊再開始播放，可用 `REMOTE_MUSIC_BUFFER_SECONDS` 設為 0–10 秒；設大會增加開始播放的等待時間與每條串流的記憶體用量，對持續低於播放速度的網路無法補救。`download` 會先下載並驗證整首音檔，再從暫存檔播放，結束後刪除。下載及 M4A 自動下載使用的暫存目錄預設為 `data/remote-music-cache/`，可用 `REMOTE_MUSIC_CACHE_DIRECTORY` 修改，需預留音檔大小的磁碟空間。下載若連續 15 秒未收到資料，會取消並清理暫存；持續有進度的下載不受 15 秒總時長限制。`/music reload` 預設重新讀取並顯示遠端曲庫；`/music reload source:local` 才會重掃本地。遠端歌曲在 `music_server` 匯入或停用後由 API 即時反映。
 
 
 ## 複製文管理

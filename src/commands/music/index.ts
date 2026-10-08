@@ -4,13 +4,13 @@ import { browsers } from '../../features/music/presentation/browserState.js';
 export const data = new SlashCommandBuilder().setName('music').setDescription('本地與遠端音樂播放器').setDMPermission(false)
     .addSubcommand(sub => sub.setName('play').setDescription('播放歌曲或加入佇列')
         .addStringOption(option => option.setName('song').setDescription('搜尋歌曲名稱').setAutocomplete(true).setRequired(true))
-        .addStringOption(option => option.setName('source').setDescription('曲庫來源，預設本地')
-            .addChoices({ name: '本地曲庫', value: 'local' }, { name: '遠端曲庫', value: 'remote' }))
+        .addStringOption(option => option.setName('source').setDescription('曲庫來源，預設遠端')
+            .addChoices({ name: '遠端曲庫', value: 'remote' }, { name: '本地曲庫', value: 'local' }))
         .addBooleanOption(option => option.setName('next').setDescription('排在待播佇列最前方')))
     .addSubcommand(sub => sub.setName('library').setDescription('瀏覽曲庫')
         .addStringOption(option => option.setName('query').setDescription('歌曲或演出者關鍵字'))
-        .addStringOption(option => option.setName('source').setDescription('曲庫來源，預設本地')
-            .addChoices({ name: '本地曲庫', value: 'local' }, { name: '遠端曲庫', value: 'remote' })))
+        .addStringOption(option => option.setName('source').setDescription('曲庫來源，預設遠端')
+            .addChoices({ name: '遠端曲庫', value: 'remote' }, { name: '本地曲庫', value: 'local' })))
     .addSubcommand(sub => sub.setName('queue').setDescription('查看待播清單'))
     .addSubcommand(sub => sub.setName('panel').setDescription('取得或重建播放器面板'))
     .addSubcommand(sub => sub.setName('stop').setDescription('結束播放並離開語音頻道'))
@@ -33,7 +33,9 @@ export const data = new SlashCommandBuilder().setName('music').setDescription('�
         .addIntegerOption(o => o.setName('from').setDescription('原位置').setMinValue(1).setRequired(true))
         .addIntegerOption(o => o.setName('to').setDescription('目標位置').setMinValue(1).setRequired(true)))
     .addSubcommand(sub => sub.setName('clear').setDescription('清空待播歌曲，保留目前播放'))
-    .addSubcommand(sub => sub.setName('reload').setDescription('重新掃描本地曲庫（所有成員可使用）'));
+    .addSubcommand(sub => sub.setName('reload').setDescription('重新讀取曲庫，預設遠端（所有成員可使用）')
+        .addStringOption(option => option.setName('source').setDescription('曲庫來源，預設遠端')
+            .addChoices({ name: '遠端曲庫', value: 'remote' }, { name: '本地曲庫', value: 'local' })));
 
 
 export { execute, handleMusicInteraction, handleMusicInteraction as handleInteraction } from '../../features/music/presentation/commands.js';

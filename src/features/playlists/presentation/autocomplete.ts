@@ -1,4 +1,4 @@
-import { musicLibrary, searchRemoteSongs } from '../../music/api.js';
+import { musicLibrary, searchRemoteSongs, selectedMusicSource } from '../../music/api.js';
 import type { AutocompleteInteraction } from 'discord.js';
 import { playlists } from '../store.js';
 import { isInteractionResponseUnavailable, logInteractionError } from '../../../shared/discord/interactionErrors.js';
@@ -15,7 +15,9 @@ export async function completePlaylist(interaction: AutocompleteInteraction): Pr
             await interaction.respond(p.entries.map((e, i) => ({ name: `${i + 1}. ${e.title} · ${e.source === 'remote' ? '遠端' : '本地'}`.slice(0, 100), value: e.entryId }))
                 .filter(e => e.name.toLocaleLowerCase().includes(query)).slice(0, 25));
         } else if (focus.name === 'song') {
-            const tracks = interaction.options.getString('source') === 'remote'
+            const source = selectedMusicSource(interaction.options.getString('source'));
+            if (source === 'local') await musicLibrary.load();
+            const tracks = source === 'remote'
                 ? (await searchRemoteSongs(query, undefined, 25, 2000)).items : musicLibrary.search(query).slice(0, 25);
             await interaction.respond(tracks.map(t => ({ name: `${t.title.slice(0, 65)} · ${t.artist?.slice(0, 20) ?? ''} · ${t.id.slice(0, 5)}`, value: t.id })));
         } else await interaction.respond([]);

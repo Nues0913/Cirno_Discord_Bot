@@ -1,15 +1,14 @@
 import { MessageFlags, type ChatInputCommandInteraction, type Interaction, type ButtonInteraction, type StringSelectMenuInteraction } from 'discord.js';
 import { musicLibrary } from '../library/localLibrary.js';
 import { getRemoteSong, searchRemoteSongs } from '../library/remoteLibrary.js';
-import { isRemoteTrack, trackSource } from '../model/track.js';
+import { isRemoteTrack } from '../model/track.js';
 import { musicPlayer } from '../playback/player.js';
 import { isInteractionResponseUnavailable, logInteractionError } from '../../../shared/discord/interactionErrors.js';
 
-import { findTracks, type MusicSource } from '../application/catalog.js';
+import { findTracks, selectedMusicSource } from '../application/catalog.js';
 import { createBrowser, renderBrowser } from './libraryBrowser.js';
 import { browsers } from './browserState.js';
 import { playTracks, textChannel, type MusicInteraction } from './playbackActions.js';
-const selectedSource = (value: string | null): MusicSource => value === 'remote' ? 'remote' : 'local';
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
@@ -33,7 +32,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
         }
         switch (subcommand) {
             case 'play': {
-                const source = selectedSource(interaction.options.getString('source'));
+                const source = selectedMusicSource(interaction.options.getString('source'));
                 if (source === 'local') await musicLibrary.load();
                 const query = interaction.options.getString('song', true);
                 const matches = await findTracks(source, query);
@@ -44,7 +43,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
                 await interaction.editReply({ content: await playTracks(interaction, [matches[0]], interaction.options.getBoolean('next') ?? false), allowedMentions: { parse: [] } }); return;
             }
             case 'library':
-                { const source = selectedSource(interaction.options.getString('source'));
+                { const source = selectedMusicSource(interaction.options.getString('source'));
                 if (source === 'local') await musicLibrary.load();
                 await interaction.editReply(await createBrowser(interaction, 'library', interaction.options.getString('query') ?? '', source)); return; }
             case 'queue':
@@ -55,7 +54,10 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
                 await musicPlayer.control(interaction.guildId, interaction.user.id, 'stop');
                 await interaction.editReply('已結束播放並離開語音頻道。'); return;
             case 'reload':
-                await interaction.editReply(`曲庫已更新，共 ${(await musicLibrary.reload()).length} 首歌曲。`); return;
+                if (selectedMusicSource(interaction.options.getString('source')) === 'remote') {
+                    await interaction.editReply(await createBrowser(interaction, 'library')); return;
+                }
+                await interaction.editReply(`本地曲庫已更新，共 ${(await musicLibrary.reload()).length} 首歌曲。`); return;
         }
     } catch (error) { await reportError(interaction, error); }
 }
@@ -72,9 +74,9 @@ async function reportError(interaction: MusicInteraction, error: unknown): Promi
 }
 export async function handleMusicInteraction(interaction: Interaction): Promise<boolean> {
     if (interaction.isAutocomplete() && interaction.commandName === 'music') {
-        // The initial scan runs at startup; don't hold autocomplete open for filesystem work.
-        const source = interaction.options.getString('source') ?? 'local';
+        const source = selectedMusicSource(interaction.options.getString('source'));
         try {
+            if (source === 'local') await musicLibrary.load();
             const tracks = source === 'remote'
                 ? (await searchRemoteSongs(String(interaction.options.getFocused()), undefined, 25, 2000)).items
                 : musicLibrary.search(String(interaction.options.getFocused())).slice(0, 25);
@@ -130,10 +132,7 @@ async function handlePanelInteraction(interaction: ButtonInteraction | StringSel
     musicPlayer.assertPanel(interaction.guildId, key, interaction.message.id);
     if (action === 'library' || action === 'queue') {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        const source = action === 'library' && musicPlayer.get(interaction.guildId)?.queue.current
-            ? trackSource(musicPlayer.get(interaction.guildId)!.queue.current!.track) : 'local';
-        if (action === 'library' && source === 'local') await musicLibrary.load();
-        await interaction.editReply(await createBrowser(interaction, action, '', source));
+        await interaction.editReply(await createBrowser(interaction, action));
     } else {
         await interaction.deferUpdate();
         await musicPlayer.control(interaction.guildId, interaction.user.id, action, {

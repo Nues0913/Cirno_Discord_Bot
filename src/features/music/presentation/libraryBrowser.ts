@@ -2,11 +2,12 @@ import { randomBytes } from 'node:crypto';
 import { musicLibrary, type LocalTrack } from '../library/localLibrary.js';
 import { searchRemoteSongs } from '../library/remoteLibrary.js';
 import { musicPlayer } from '../playback/player.js';
+import { DEFAULT_MUSIC_SOURCE } from '../application/catalog.js';
 
 import { browsers, type Browser } from './browserState.js';
 import { renderBrowserView } from './browserView.js';
 import type { MusicInteraction } from './playbackActions.js';
-export async function createBrowser(interaction: MusicInteraction, kind: Browser['kind'], query = '', source: Browser['source'] = 'local', next = false) {
+export async function createBrowser(interaction: MusicInteraction, kind: Browser['kind'], query = '', source: Browser['source'] = DEFAULT_MUSIC_SOURCE, next = false) {
     browsers.prune();
     const key = randomBytes(8).toString('hex');
     const browser: Browser = {
