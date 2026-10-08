@@ -97,13 +97,13 @@ Bot 在語音頻道需要「查看頻道」「連線」「說話」；面板所�
 播放清單一律保存於 `music_server` 的 SQLite 資料庫；Bot 只負責 Discord 互動與播放，不直接保存清單。在 Bot `.env` 必須設定以下兩個變數，本地與遠端歌曲收藏都透過同一個 Server 的清單 API 管理：
 
 ```dotenv
-PLAYLIST_API_URL=https://your-music-server.example/
-PLAYLIST_API_TOKEN=your_dedicated_playlist_bot_token
+REMOTE_MUSIC_API_URL=https://your-music-server.example/
+REMOTE_MUSIC_API_TOKEN=your_music_server_api_token
 ```
 
-`PLAYLIST_API_TOKEN` 是 Server 的 **`PLAYLIST_BOT_TOKEN`**，至少 32 字元，與音檔讀取用的 `REMOTE_MUSIC_API_TOKEN` 及上傳管理金鑰不同。Server 的 `scripts/setup.sh` 會為缺少設定的安裝產生專用金鑰；請安全地提供給 Bot，不要提交到 Git 或交給 Discord 使用者。Server 需更新至支援清單 API 的版本，執行 `npm run db:generate`、`npm run db:migrate` 並重新啟動，或以 Docker 重新建置啟動並自動遷移。新增資料表不會刪除既有歌曲。
+歌曲與清單共用 `REMOTE_MUSIC_API_URL` 和 `REMOTE_MUSIC_API_TOKEN`，Token 對應 Server 的 **`API_TOKEN`**（至少 32 字元）。已設定遠端曲庫的 Bot 不需再設定清單專用網址或金鑰。舊的 `PLAYLIST_API_URL`、`PLAYLIST_API_TOKEN` 及 Server 的 `PLAYLIST_BOT_TOKEN` 已停用，可從環境設定移除。Server 需同步更新、執行 `npm run db:generate`、`npm run db:migrate` 並重新啟動，或以 Docker 重新建置啟動並自動遷移；既有歌曲與清單會保留。
 
-Bot 只會以 Discord interaction 的使用者 ID 呼叫清單 API；Server 驗證專用金鑰後限制清單擁有者。更新帶有版本，遇到其他操作造成衝突會提示重新讀取；寫入不會自動重試。缺少 API 設定、設定不完整或服務無法連線時，清單操作會明確失敗並提示管理者設定；不會讀寫 Bot 的 JSON 或建立本地清單。HTTP 只適用於可信任本機／私人網路，跨主機請使用 HTTPS。
+Bot 只會以 Discord interaction 的使用者 ID 呼叫清單 API；Server 驗證 API 金鑰後限制清單擁有者。更新帶有版本，遇到其他操作造成衝突會提示重新讀取；寫入不會自動重試。缺少 API 設定、設定不完整或服務無法連線時，清單操作會明確失敗並提示管理者設定；不會讀寫 Bot 的 JSON 或建立本地清單。HTTP 只適用於可信任本機／私人網路，跨主機請使用 HTTPS。
 
 清單保存於 Server 的 SQLite；請備份並持久掛載 Server 的 DB 目錄。本地音檔仍在 Bot 主機，Server 只保存收藏參照，不會將本地音檔上傳。換 Bot 主機或移動本地曲庫後，可能需要重新加入本地收藏。
 
@@ -136,7 +136,7 @@ REMOTE_MUSIC_MODE=stream
 REMOTE_MUSIC_BUFFER_SECONDS=3
 ```
 
-網址必須指向能傳送音檔的 Nginx 入口；本機 Docker Compose 預設為 `http://127.0.0.1:8080/`，直接連 Fastify 埠只會收到 `X-Accel-Redirect` 標頭。Token 使用 `music_server` 根目錄 `.env` 的 `API_TOKEN`，不用上傳管理用的 `ADMIN_TOKEN`。Bot 搬到另一台主機時，須將網址改成可連通的 HTTPS 或私有 VPN 入口；`127.0.0.1` 只指向 Bot 自己所在的主機。
+網址必須指向能傳送音檔的 Nginx 入口；本機 Docker Compose 預設為 `http://127.0.0.1/`，直接連 Fastify 埠只會收到 `X-Accel-Redirect` 標頭。Token 使用 `music_server` 根目錄 `.env` 的 `API_TOKEN`，歌曲與個人清單共用此金鑰；上傳管理使用另外的 `ADMIN_TOKEN`。Bot 搬到另一台主機時，須將網址改成可連通的 HTTPS 或私有 VPN 入口；`127.0.0.1` 只指向 Bot 自己所在的主機。
 
 使用 `/music library source:remote` 瀏覽遠端曲庫；使用 `/music play source:remote song:歌曲` 搜尋並點播。輸入歌曲前先選擇 `source:remote`，自動完成才會顯示遠端結果。未選來源時維持本地曲庫。本地與遠端歌曲可加入同一佇列，共用面板與控制規則；面板的「選歌」按鈕會開啟目前歌曲所屬的曲庫。
 

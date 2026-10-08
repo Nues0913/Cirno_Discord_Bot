@@ -1,4 +1,5 @@
 import type { RemoteTrack } from '../model/track.js';
+import { remoteMusicApiSettings } from '../../../shared/http/musicApi.js';
 export type { RemoteTrack } from '../model/track.js';
 
 export interface RemotePage { items: RemoteTrack[]; nextCursor?: string; }
@@ -8,23 +9,10 @@ const HASH = /^[0-9a-f]{64}$/i;
 const MAX_AUDIO_BYTES = 268_435_456;
 export const isRemoteId = (value: string): boolean => UUID.test(value);
 
-function settings(): { base: URL; token: string } {
-    const raw = process.env.REMOTE_MUSIC_API_URL?.trim();
-    const token = process.env.REMOTE_MUSIC_API_TOKEN?.trim();
-    if (!raw || !token) throw new Error('遠端曲庫未設定，請設定 REMOTE_MUSIC_API_URL 與 REMOTE_MUSIC_API_TOKEN。');
-    let base: URL;
-    try { base = new URL(raw.endsWith('/') ? raw : `${raw}/`); }
-    catch { throw new Error('REMOTE_MUSIC_API_URL 不是有效網址。'); }
-    if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash) {
-        throw new Error('REMOTE_MUSIC_API_URL 必須是 HTTP 或 HTTPS 服務根網址。');
-    }
-    return { base, token };
-}
-
-export function remoteLibraryKey(): string { return settings().base.href; }
+export function remoteLibraryKey(): string { return remoteMusicApiSettings().base.href; }
 
 function url(path: string, query?: URLSearchParams): URL {
-    const { base } = settings();
+    const { base } = remoteMusicApiSettings();
     const result = new URL(path, base);
     if (query) result.search = query.toString();
     return result;
@@ -47,7 +35,7 @@ function parseTrack(value: unknown): RemoteTrack {
 }
 
 async function request(path: string, query?: URLSearchParams, timeoutMs = 8000): Promise<Response> {
-    const { token } = settings();
+    const { token } = remoteMusicApiSettings();
     let response: Response;
     try {
         response = await fetch(url(path, query), { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(timeoutMs), redirect: 'error' });
@@ -85,7 +73,7 @@ export async function getRemoteSong(id: string): Promise<RemoteTrack> {
 
 export async function openRemoteAudio(id: string, controller: AbortController): Promise<Response> {
     if (!UUID.test(id)) throw new Error('遠端歌曲 ID 無效。');
-    const { token } = settings();
+    const { token } = remoteMusicApiSettings();
     const timeout = setTimeout(() => controller.abort(), 15_000);
     try {
         const response = await fetch(url(`v1/songs/${id}/audio`), {

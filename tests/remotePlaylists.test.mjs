@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { RemotePlaylistStore } from '../dist/features/playlists/remoteStore.js';
+import { remoteLibraryKey } from '../dist/features/music/library/remoteLibrary.js';
 import { playlists } from '../dist/features/playlists/store.js';
 const owner = '123456789012345678';
 async function server(t, handler) {
@@ -12,22 +13,22 @@ async function server(t, handler) {
         handler(request, response, body);
     });
     await new Promise(resolve => instance.listen(0, '127.0.0.1', resolve));
-    const saved = [process.env.PLAYLIST_API_URL, process.env.PLAYLIST_API_TOKEN];
-    process.env.PLAYLIST_API_URL = `http://127.0.0.1:${instance.address().port}/`;
-    process.env.PLAYLIST_API_TOKEN = 'test-playlist-only-secret-012345678901234567890';
+    const saved = [process.env.REMOTE_MUSIC_API_URL, process.env.REMOTE_MUSIC_API_TOKEN];
+    process.env.REMOTE_MUSIC_API_URL = `http://127.0.0.1:${instance.address().port}/`;
+    process.env.REMOTE_MUSIC_API_TOKEN = 'test-shared-api-secret-012345678901234567890';
     t.after(async () => {
-        for (const [i, key] of ['PLAYLIST_API_URL', 'PLAYLIST_API_TOKEN'].entries()) {
+        for (const [i, key] of ['REMOTE_MUSIC_API_URL', 'REMOTE_MUSIC_API_TOKEN'].entries()) {
             if (saved[i] === undefined) delete process.env[key]; else process.env[key] = saved[i];
         }
         instance.closeAllConnections(); await new Promise(resolve => instance.close(resolve));
     });
 }
-test('Bot backend delegates all CRUD requests with dedicated auth and authenticated Discord ID', async t => {
+test('Bot backend delegates all CRUD requests with shared API auth and authenticated Discord ID', async t => {
     const entryId = randomUUID();
     const p = { id: randomUUID(), ownerId: owner, name: 'mix', revision: 4, entries: [{ entryId, source: 'local', id: 'song', title: 'song' }] };
     const calls = [];
     await server(t, (req, res, body) => {
-        assert.equal(req.headers.authorization, `Bearer ${process.env.PLAYLIST_API_TOKEN}`);
+        assert.equal(req.headers.authorization, `Bearer ${process.env.REMOTE_MUSIC_API_TOKEN}`);
         assert.equal(req.headers['x-discord-user-id'], owner);
         calls.push({ method: req.method, url: req.url, body });
         res.setHeader('Content-Type', 'application/json');
@@ -53,9 +54,20 @@ test('server conflicts/auth failures are surfaced without retry or fallback loca
     assert.equal(calls, 1);
     status = 401; await assert.rejects(playlists.list(owner), /驗證失敗/);
     status = 503; await assert.rejects(playlists.list(owner), /503/);
-    delete process.env.PLAYLIST_API_TOKEN;
+    delete process.env.REMOTE_MUSIC_API_TOKEN;
     await assert.rejects(playlists.list(owner), /請設定/);
     assert.equal(calls, 3);
+});
+test('song and playlist clients reject the same invalid backend URLs before sending credentials', async t => {
+    let calls = 0;
+    await server(t, (_req, res) => { calls++; res.end('{}'); });
+    for (const value of ['invalid', 'file:///tmp/music', 'https://user:password@example.com/',
+        'https://example.com/?token=secret', 'https://example.com/#fragment']) {
+        process.env.REMOTE_MUSIC_API_URL = value;
+        assert.throws(() => remoteLibraryKey(), /REMOTE_MUSIC_API_URL/);
+        await assert.rejects(playlists.list(owner), /REMOTE_MUSIC_API_URL/);
+    }
+    assert.equal(calls, 0);
 });
 test('rejects wrong-owner data and redirects, keeping credential off redirect destinations', async t => {
     let mode = 'owner';

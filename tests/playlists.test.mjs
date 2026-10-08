@@ -9,7 +9,7 @@ import { playlists } from '../dist/features/playlists/store.js';
 test('every playlist operation requires the backend without creating local storage', async t => {
     const directory = await mkdtemp(join(tmpdir(), 'cirno-backend-required-'));
     const originalCwd = process.cwd();
-    const keys = ['PLAYLIST_API_URL', 'PLAYLIST_API_TOKEN'];
+    const keys = ['REMOTE_MUSIC_API_URL', 'REMOTE_MUSIC_API_TOKEN'];
     const originalSettings = keys.map(key => process.env[key]);
     t.after(async () => {
         process.chdir(originalCwd);
@@ -31,7 +31,7 @@ test('every playlist operation requires the backend without creating local stora
         keys.forEach((key, i) => {
             if (settings[i] === undefined) delete process.env[key]; else process.env[key] = settings[i];
         });
-        for (const operation of operations) await assert.rejects(operation, /請設定 PLAYLIST_API_URL/);
+        for (const operation of operations) await assert.rejects(operation, /請設定 REMOTE_MUSIC_API_URL/);
     }
     assert.deepEqual(await readdir(directory), []);
 });

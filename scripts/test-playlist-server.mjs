@@ -33,14 +33,11 @@ try {
     await writeFile(join(songs, 'local.wav'), wav);
     const song = await db.song.create({ data: { fileKey: 'remote.wav', title: '遠端歌曲', mimeType: 'audio/wav',
         byteSize: wav.length, durationSeconds: 0.1, sha256: createHash('sha256').update(wav).digest('hex') } });
-    const playback = 'integration-playback-token-012345678901234567890';
-    const credential = 'integration-playlist-token-012345678901234567890';
-    app = buildApp({ db, token: playback, playlistToken: credential, audioRoot: songs });
+    const credential = 'integration-api-token-012345678901234567890';
+    app = buildApp({ db, token: credential, audioRoot: songs });
     const address = await app.listen({ host: '127.0.0.1', port: 0 });
-    process.env.PLAYLIST_API_URL = address;
-    process.env.PLAYLIST_API_TOKEN = credential;
     process.env.REMOTE_MUSIC_API_URL = address;
-    process.env.REMOTE_MUSIC_API_TOKEN = playback;
+    process.env.REMOTE_MUSIC_API_TOKEN = credential;
     process.env.MUSIC_AUDIO_DIRECTORY = songs;
     const user = '123456789012345678';
     const local = (await musicLibrary.reload())[0], remote = await getRemoteSong(song.id);
@@ -60,7 +57,7 @@ try {
     assert.equal(persisted.revision, p.revision);
     assert.deepEqual(persisted.entries.map(e => e.entryId), p.entries.map(e => e.entryId));
     await assert.rejects(playlists.get('223456789012345678', p.id), /找不到/);
-    assert.equal((await fetch(`${address}/v1/playlists`, { headers: { Authorization: `Bearer ${playback}`, 'X-Discord-User-Id': user } })).status, 401);
+    assert.equal((await fetch(`${address}/v1/playlists`, { headers: { Authorization: 'Bearer wrong-credential', 'X-Discord-User-Id': user } })).status, 401);
     await db.song.update({ where: { id: remote.id }, data: { status: 'disabled' } });
     const unavailable = await resolvePlaylist((await playlists.get(user, p.id)).entries);
     assert.equal(unavailable.tracks.length, 1); assert.equal(unavailable.unavailable.length, 1);
@@ -70,7 +67,7 @@ try {
     assert.equal(await db.playlist.count({ where: { id: p.id } }), 0);
     assert.equal(await db.playlistEntry.count({ where: { playlistId: p.id } }), 0);
     assert.equal((await independentClient.list(user)).length, 0);
-    console.log('PASS: real HTTP + SQLite; mixed playlist CRUD, owner isolation, dedicated auth, disabled songs, database persistence and independent clients.');
+    console.log('PASS: real HTTP + SQLite; mixed playlist CRUD, owner isolation, shared auth, disabled songs, database persistence and independent clients.');
 } finally {
     if (app) await app.close();
     if (db) await db.$disconnect();
