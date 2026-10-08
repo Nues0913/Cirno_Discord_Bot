@@ -2,14 +2,15 @@ import { musicPlayer } from '../../music/api.js';
 import { MessageFlags, type ChatInputCommandInteraction, type Interaction, type ButtonInteraction } from 'discord.js';
 import { playlists } from '../store.js';
 import { saveTrack } from '../tracks.js';
-import logger from '../../../shared/logging/logger.js';
+import { isInteractionResponseUnavailable, logInteractionError } from '../../../shared/discord/interactionErrors.js';
 import { renderPlaylist, renderDeleteConfirmation, renderPlaylistList } from './view.js';
 import { completePlaylist } from './autocomplete.js';
 import { playPlaylist } from './playback.js';
 import { addSelectedTrack } from './addTrack.js';
 
 async function report(interaction: ChatInputCommandInteraction | ButtonInteraction, error: unknown) {
-    logger.error(error);
+    logInteractionError(error);
+    if (isInteractionResponseUnavailable(error)) return;
     const content = error instanceof Error && !(error as { code?: unknown }).code
         ? error.message : '操作失敗，請稍後再試；若持續發生請通知管理者。';
     const payload = { content, allowedMentions: { parse: [] as [] } };

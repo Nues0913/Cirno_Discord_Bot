@@ -1,7 +1,7 @@
 import { musicLibrary, searchRemoteSongs } from '../../music/api.js';
 import type { AutocompleteInteraction } from 'discord.js';
 import { playlists } from '../store.js';
-import logger from '../../../shared/logging/logger.js';
+import { isInteractionResponseUnavailable, logInteractionError } from '../../../shared/discord/interactionErrors.js';
 
 export async function completePlaylist(interaction: AutocompleteInteraction): Promise<void> {
     try {
@@ -19,5 +19,8 @@ export async function completePlaylist(interaction: AutocompleteInteraction): Pr
                 ? (await searchRemoteSongs(query, undefined, 25, 2000)).items : musicLibrary.search(query).slice(0, 25);
             await interaction.respond(tracks.map(t => ({ name: `${t.title.slice(0, 65)} · ${t.artist?.slice(0, 20) ?? ''} · ${t.id.slice(0, 5)}`, value: t.id })));
         } else await interaction.respond([]);
-    } catch (error) { logger.error(error); if (!interaction.responded) await interaction.respond([]); }
+    } catch (error) {
+        logInteractionError(error);
+        if (!isInteractionResponseUnavailable(error) && !interaction.responded) await interaction.respond([]);
+    }
 }

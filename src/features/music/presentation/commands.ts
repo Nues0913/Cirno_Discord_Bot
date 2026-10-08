@@ -3,7 +3,7 @@ import { musicLibrary } from '../library/localLibrary.js';
 import { getRemoteSong, searchRemoteSongs } from '../library/remoteLibrary.js';
 import { isRemoteTrack, trackSource } from '../model/track.js';
 import { musicPlayer } from '../playback/player.js';
-import logger from '../../../shared/logging/logger.js';
+import { isInteractionResponseUnavailable, logInteractionError } from '../../../shared/discord/interactionErrors.js';
 
 import { findTracks, type MusicSource } from '../application/catalog.js';
 import { createBrowser, renderBrowser } from './libraryBrowser.js';
@@ -60,8 +60,9 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     } catch (error) { await reportError(interaction, error); }
 }
 async function reportError(interaction: MusicInteraction, error: unknown): Promise<void> {
+    logInteractionError(error);
+    if (isInteractionResponseUnavailable(error)) return;
     const content = error instanceof Error && !(error as { code?: unknown }).code ? error.message : '操作失敗，請稍後再試或檢查 Bot 權限。';
-    logger.error(error);
     const payload = { content, allowedMentions: { parse: [] as [] } };
     if (interaction.deferred && interaction.ephemeral && !interaction.replied) {
         await interaction.editReply({ ...payload, embeds: [], components: [] });
@@ -81,7 +82,10 @@ export async function handleMusicInteraction(interaction: Interaction): Promise<
                 name: `${track.title.slice(0, 65)} · ${(track.artist ?? (isRemoteTrack(track) ? '遠端歌曲' : track.filename)).slice(0, 20)} · ${track.id.slice(0, 5)}`,
                 value: track.id
             })));
-        } catch (error) { logger.error(error); await interaction.respond([]); }
+        } catch (error) {
+            logInteractionError(error);
+            if (!isInteractionResponseUnavailable(error) && !interaction.responded) await interaction.respond([]);
+        }
         return true;
     }
     if (!(interaction.isButton() || interaction.isStringSelectMenu()) ||

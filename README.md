@@ -15,6 +15,8 @@ npm start
 
 開發時執行 `npm run dev`；執行自動化測試使用 `npm test`。
 
+同一個 Discord Bot 請只啟動一個執行個體，包含其他主機上的程序。不要同時以 `npm start`、開發模式、PM2、systemd 或 Docker 啟動同一個 Bot：播放器與選單狀態保存在各程序的記憶體，重複執行會讓互動重複回覆或新選單被另一個程序判定失效。遇到 `40060`（已回覆）或 `10062`（互動不可用），先檢查重複程序及回覆延遲。停止多餘程序或重新啟動後，重新執行 `/music library`、`/music play` 或 `/playlist show` 建立新選單。
+
 `.env` 至少需有 `TOKEN`（Discord Bot token）與 `CLIENT_ID`（應用程式 ID）
 ```dotenv
 TOKEN=your_discord_bot_token
