@@ -54,6 +54,12 @@ try {
     assert.equal(p.entries[0].source, 'remote');
     p = await playlists.remove(user, p.id, p.entries[0].entryId);
     p = await playlists.rename(user, p.id, '我的收藏');
+    // Verify Bot API writes reached the backend tables, including order and revision.
+    const persisted = await db.playlist.findUniqueOrThrow({ where: { id: p.id }, include: { entries: { orderBy: { position: 'asc' } } } });
+    assert.equal(persisted.ownerId, user);
+    assert.equal(persisted.name, p.name);
+    assert.equal(persisted.revision, p.revision);
+    assert.deepEqual(persisted.entries.map(e => e.entryId), p.entries.map(e => e.entryId));
     await assert.rejects(playlists.get('223456789012345678', p.id), /找不到/);
     assert.equal((await fetch(`${address}/v1/playlists`, { headers: { Authorization: `Bearer ${playback}`, 'X-Discord-User-Id': user } })).status, 401);
     await db.song.update({ where: { id: remote.id }, data: { status: 'disabled' } });
@@ -70,6 +76,8 @@ try {
     const independentClient = new RemotePlaylistStore();
     assert.equal((await independentClient.list(user)).length, 2);
     await playlists.delete(user, p.id, p.revision);
+    assert.equal(await db.playlist.count({ where: { id: p.id } }), 0);
+    assert.equal(await db.playlistEntry.count({ where: { playlistId: p.id } }), 0);
     assert.equal((await independentClient.list(user)).length, 1);
     console.log('PASS: real HTTP + SQLite; mixed playlist CRUD, owner isolation, dedicated auth, disabled songs, idempotent legacy import and independent clients.');
 } finally {

@@ -1,21 +1,45 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { ChannelType, MessageFlags } from 'discord.js';
-import { PlaylistStore, playlists } from '../dist/lib/playlistStore.js';
+import { playlists } from '../dist/lib/playlistStore.js';
 import { data, execute, handlePlaylistInteraction } from '../dist/commands/playlist/index.js';
 import { musicLibrary } from '../dist/lib/localMusicLibrary.js';
 import { musicPlayer } from '../dist/lib/localMusicPlayer.js';
 import { data as musicData } from '../dist/commands/music/index.js';
 const owner = '123456789012345678';
+// Stub API responses for interaction unit tests; persistence is tested by Server
+// and the real HTTP + SQLite integration check, never by a Bot file store.
 async function fixture(t) {
-    const directory = await mkdtemp(join(tmpdir(), 'cirno-command-test-'));
-    t.after(() => rm(directory, { recursive: true, force: true }));
-    const store = new PlaylistStore(join(directory, 'playlists.json'));
-    for (const method of ['get', 'list', 'create', 'rename', 'delete', 'add', 'remove', 'move']) t.mock.method(playlists, method, store[method].bind(store));
-    return store;
+    const records = new Map();
+    const owned = (user, id) => {
+        const p = records.get(id);
+        if (!p || p.ownerId !== user) throw Error('找不到你的播放清單');
+        return p;
+    };
+    const responses = {
+        list: async user => structuredClone([...records.values()].filter(p => p.ownerId === user)),
+        get: async (user, id) => structuredClone(owned(user, id)),
+        create: async (user, name, tracks = []) => {
+            const p = { id: randomUUID(), ownerId: user, name, revision: 1,
+                entries: tracks.map(track => ({ ...track, entryId: randomUUID() })) };
+            records.set(p.id, p); return structuredClone(p);
+        },
+        add: async (user, id, tracks) => {
+            const p = owned(user, id);
+            p.entries.push(...tracks.map(track => ({ ...track, entryId: randomUUID() })));
+            p.revision++; return structuredClone(p);
+        },
+        rename: async (user, id, name) => {
+            const p = owned(user, id); p.name = name; p.revision++; return structuredClone(p);
+        },
+        delete: async (user, id, revision) => {
+            if (owned(user, id).revision !== revision) throw Error('清單已更新');
+            records.delete(id);
+        }
+    };
+    for (const [method, response] of Object.entries(responses)) t.mock.method(playlists, method, response);
+    return responses;
 }
 function command(sub, values = {}, user = owner) {
     const replies = [];
