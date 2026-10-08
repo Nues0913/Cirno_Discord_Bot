@@ -73,6 +73,15 @@ test('a rejected error notification is not retried', async t => {
     assert.equal(interaction.followUp.mock.callCount(), 0);
 });
 
+test('removed commands receive one ephemeral update notice instead of an unacknowledged interaction', async t => {
+    const { client, interaction } = fixture(t, async () => {});
+    interaction.commandName = 'removed';
+    client.emit(Events.InteractionCreate, interaction); await flush();
+    assert.equal(interaction.reply.mock.callCount(), 1);
+    assert.match(interaction.reply.mock.calls[0].arguments[0].content, /指令已更新/);
+    assert.equal(interaction.reply.mock.calls[0].arguments[0].flags, 64);
+});
+
 test('music and playlist buttons stop after Discord rejects their acknowledgement', async t => {
     browsers.set('fixture', { userId: 'owner', guildId: 'guild', expires: Date.now() + 60000 });
     t.after(() => browsers.clear());

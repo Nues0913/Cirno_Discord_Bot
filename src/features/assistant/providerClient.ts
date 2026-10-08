@@ -12,8 +12,12 @@ export async function streamCompletion(
     messages: ChatMessage[],
     onUpdate?: (content: string) => void,
     enableWebTools = false,
-    toolChoice: 'auto' | 'required' = 'auto'
+    toolChoice: 'auto' | 'required' = 'auto',
+    callerSignal?: AbortSignal
 ): Promise<{ content: string; reasoningContent: string; toolCalls: ToolCall[] }> {
+    callerSignal?.throwIfAborted();
+    const timeout = AbortSignal.timeout(getPositiveInteger(process.env.NVIDIA_NIM_TIMEOUT_MS, DEFAULT_NVIDIA_NIM_TIMEOUT_MS));
+    const signal = callerSignal ? AbortSignal.any([callerSignal, timeout]) : timeout;
     const apiKey = process.env.NVIDIA_API_KEY;
     if (!apiKey) {
         throw new ConfigurationError('NVIDIA_API_KEY is not configured.');
@@ -44,9 +48,7 @@ export async function streamCompletion(
                 temperature: 1,
                 stream: true
             }),
-            signal: AbortSignal.timeout(
-                getPositiveInteger(process.env.NVIDIA_NIM_TIMEOUT_MS, DEFAULT_NVIDIA_NIM_TIMEOUT_MS)
-            )
+            signal
         }
     );
 
@@ -61,5 +63,5 @@ export async function streamCompletion(
         throw new Error('NVIDIA NIM returned a response without a stream.');
     }
 
-    return readCompletionStream(response.body, onUpdate);
+    return readCompletionStream(response.body, onUpdate, signal);
 }

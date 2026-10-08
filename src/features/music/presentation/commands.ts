@@ -117,15 +117,23 @@ async function handleBrowserInteraction(interaction: ButtonInteraction | StringS
         if (!track) throw new UserActionError('歌曲已移除，請重新開啟曲庫。');
         await interaction.editReply({ content: await playTracks(interaction, [track], browser.next), allowedMentions: { parse: [] } });
     } else if (interaction.isButton() && ['prev', 'next'].includes(action)) {
+        const generation = browser.generation = (browser.generation ?? 0) + 1;
         await interaction.deferUpdate();
+        if (browser.generation !== generation) return;
         const nextPage = action === 'next' ? browser.page + 1 : Math.max(0, browser.page - 1);
         if (browser.source === 'remote' && browser.kind === 'library' && action === 'next') {
             const cursor = browser.remotePages.get(browser.page)?.nextCursor;
             if (!cursor) throw new UserActionError('已到最後一頁。');
             if (!browser.remotePages.has(nextPage)) browser.remotePages.set(nextPage, await searchRemoteSongs(browser.query, cursor));
         }
-        browser.page = nextPage;
-        await interaction.editReply(renderBrowser(key, browser));
+        if (browser.generation !== generation || browsers.get(key) !== browser) return;
+        const edit = (browser.edits ?? Promise.resolve()).catch(() => {}).then(async () => {
+            if (browser.generation !== generation || browsers.get(key) !== browser) return;
+            browser.page = nextPage;
+            await interaction.editReply(renderBrowser(key, browser));
+        });
+        browser.edits = edit;
+        await edit;
     } else throw new UserActionError('無效的選單操作。');
 }
 async function handlePanelInteraction(interaction: ButtonInteraction | StringSelectMenuInteraction, key: string, action: string, generation: string): Promise<void> {

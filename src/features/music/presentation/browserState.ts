@@ -4,6 +4,8 @@ export interface Browser {
     userId: string; guildId: string; sessionId?: string; kind: 'library' | 'queue';
     source: MusicSource; query: string; page: number; expires: number; next: boolean;
     ids: string[]; remotePages: Map<number, RemotePage>;
+    generation?: number;
+    edits?: Promise<unknown>;
 }
 
 export class BrowserRegistry {

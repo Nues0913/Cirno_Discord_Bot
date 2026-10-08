@@ -42,7 +42,8 @@ export const WEB_SEARCH_TOOL = {
     }
 };
 
-async function searchWeb(query: string): Promise<string> {
+async function searchWeb(query: string, callerSignal?: AbortSignal): Promise<string> {
+    callerSignal?.throwIfAborted();
     const apiKey = process.env.TAVILY_API_KEY;
     if (!apiKey) {
         return JSON.stringify({
@@ -65,9 +66,10 @@ async function searchWeb(query: string): Promise<string> {
             include_answer: false,
             include_raw_content: false
         }),
-        signal: AbortSignal.timeout(
-            getPositiveInteger(process.env.WEB_SEARCH_TIMEOUT_MS, DEFAULT_WEB_SEARCH_TIMEOUT_MS)
-        )
+        signal: AbortSignal.any([
+            AbortSignal.timeout(getPositiveInteger(process.env.WEB_SEARCH_TIMEOUT_MS, DEFAULT_WEB_SEARCH_TIMEOUT_MS)),
+            ...(callerSignal ? [callerSignal] : [])
+        ])
     });
 
     if (!response.ok) {
@@ -89,7 +91,8 @@ async function searchWeb(query: string): Promise<string> {
     });
 }
 
-export async function executeToolCall(toolCall: ToolCall): Promise<string> {
+export async function executeToolCall(toolCall: ToolCall, signal?: AbortSignal): Promise<string> {
+    signal?.throwIfAborted();
     let args: unknown;
     try {
         args = JSON.parse(toolCall.function.arguments);
@@ -104,7 +107,7 @@ export async function executeToolCall(toolCall: ToolCall): Promise<string> {
         if (typeof url !== 'string' || !url.trim()) {
             return JSON.stringify({ error: 'A non-empty HTTPS URL is required.' });
         }
-        return fetchPublicUrl(url.trim());
+        return fetchPublicUrl(url.trim(), signal);
     }
 
     if (toolCall.function.name !== 'web_search') {
@@ -119,8 +122,9 @@ export async function executeToolCall(toolCall: ToolCall): Promise<string> {
     }
 
     try {
-        return await searchWeb(query.trim());
+        return await searchWeb(query.trim(), signal);
     } catch (error) {
+        signal?.throwIfAborted();
         return JSON.stringify({
             error: error instanceof Error ? error.message : 'Web search failed.',
             query

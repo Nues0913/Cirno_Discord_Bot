@@ -98,6 +98,7 @@ export class MusicPlayer {
                 await this.connect(session);
                 return current;
             } catch (error) {
+                if (!current.active) throw new UserActionError('播放已結束，請重新點歌。');
                 this.end(current, '無法開始播放，請確認音檔與語音權限。');
                 if (error instanceof UserActionError || error instanceof ConfigurationError) throw error;
                 logInteractionError(error);
@@ -107,6 +108,7 @@ export class MusicPlayer {
         });
     }
     private async connect(session: MusicSession): Promise<void> {
+        const controller = session.connectionController = new AbortController();
         const connection = joinVoiceChannel({
             channelId: session.channel.id, guildId: session.channel.guild.id,
             adapterCreator: session.channel.guild.voiceAdapterCreator as DiscordGatewayAdapterCreator,
@@ -118,7 +120,9 @@ export class MusicPlayer {
         connection.on(VoiceConnectionStatus.Destroyed, () => {
             if (session.active) this.end(session, '語音連線已關閉。');
         });
-        await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
+        try {
+            await entersState(connection, VoiceConnectionStatus.Ready, AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]));
+        } finally { if (session.connectionController === controller) session.connectionController = undefined; }
         if (!session.active) throw new UserActionError('播放已結束，請重新點歌。');
         if (connection.joinConfig.channelId !== session.channel.id) throw new UserActionError('Bot 已被移動至其他語音頻道。');
         session.hasConnected = true;
@@ -144,6 +148,13 @@ export class MusicPlayer {
     }
     async control(guildId: string, userId: string, action: string, panel?: { sessionId: string; messageId: string; generation: number }, value?: number | string): Promise<void> {
         const loading = this.get(guildId);
+        // Initial handshake occupies the guild queue; an authorized STOP must release it immediately.
+        if (!this.stopped && action === 'stop' && loading?.active && loading.connectionController &&
+            loading.channel.guild.voiceStates.cache.get(userId)?.channelId === loading.channel.id &&
+            (!panel || (panel.sessionId === loading.id && panel.messageId === loading.panel.message?.id))) {
+            this.end(loading, '已結束播放。');
+            return;
+        }
         if ((action === 'stop' || action === 'skip') && loading?.active &&
             loading.channel.guild.voiceStates.cache.get(userId)?.channelId === loading.channel.id &&
             (!panel || (panel.sessionId === loading.id && panel.messageId === loading.panel.message?.id &&
@@ -194,6 +205,7 @@ export class MusicPlayer {
         session.status = 'ended'; session.generation++;
         if (this.get(session.channel.guild.id) === session) this.sessions.delete(session.channel.guild.id);
         clearInterval(session.progressTimer); clearTimeout(session.emptyTimer);
+        session.connectionController?.abort(); session.connectionController = undefined;
         session.clearAudio(); session.queue.clear();
         if (session.connection && session.connection.state.status !== VoiceConnectionStatus.Destroyed) session.connection.destroy();
         session.panel.update(true);

@@ -27,6 +27,8 @@ logOperationError(error);
 
 Discord 互動邊界使用 `shared/discord/interactionErrors.ts` 的 `logInteractionError`。它額外處理尚未填寫的選項（INFO）、已刪除的訊息 10008（INFO）、權限不足 50001／50013（WARN），以及互動失效 10062／重複回覆 40060（WARN）。這些已知 Discord 錯誤只記錄診斷訊息，不輸出含互動 Token 的錯誤物件或網址。
 
+共同 logger 也會處理未知錯誤碼與 HTTP 錯誤：遮蔽 webhook／interaction URL 的 token、Bearer、URL 憑證與敏感查詢參數，以及 authorization、cookie、token、secret、password、API key 和 requestBody 欄位；巢狀 cause 採相同規則。診斷仍保留 code、status、方法與去敏後的原始 stack。循環 metadata 不會讓日誌序列化失敗。不要依賴遮蔽機制主動記錄秘密。
+
 項目自動完成在尚未選擇清單時直接回傳空建議，不產生例外。清單解析會保留不可用的歌曲參照，但仍依上述分級記錄失敗原因，不會隱藏伺服器通訊錯誤。
 
 ## 輸出與設定

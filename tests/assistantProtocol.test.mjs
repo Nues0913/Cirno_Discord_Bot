@@ -73,3 +73,17 @@ test('an empty final answer after partial edits can use the normal interruption 
     assert.ok(rendered.every(payload => typeof payload.content === 'string' && payload.content.trim()));
     assert.deepEqual(sent, []);
 });
+
+test('cancellation releases a stalled model stream and suppresses queued/final Discord messages', async () => {
+    const controller = new AbortController(); let cancelled = false;
+    const body = new ReadableStream({ cancel() { cancelled = true; } });
+    const reading = readCompletionStream(body, undefined, controller.signal);
+    const rejected = assert.rejects(reading, { name: 'AbortError' });
+    controller.abort(); await rejected;
+    assert.ok(cancelled); assert.equal(body.locked, false);
+    const edits = [], sends = [];
+    const reply = new StreamingReply({ channel: { isSendable: () => true, send: async p => sends.push(p) } },
+        { edit: async p => edits.push(p) }, controller.signal);
+    reply.update('partial'); await reply.complete('final'); await reply.fail();
+    assert.deepEqual(edits, []); assert.deepEqual(sends, []);
+});

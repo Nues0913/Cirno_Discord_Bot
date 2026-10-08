@@ -8,7 +8,8 @@ const DEFAULT_MAX_TOOL_ROUNDS = 2;
 export async function generateNvidiaNimReply(
     prompt: string,
     onUpdate?: (content: string) => void,
-    onStatus?: (status: string) => void
+    onStatus?: (status: string) => void,
+    signal?: AbortSignal
 ): Promise<string> {
     const liveDataRequired = needsWebSearch(prompt);
 
@@ -27,12 +28,15 @@ export async function generateNvidiaNimReply(
     );
 
     for (let round = 0; round <= maxToolRounds; round += 1) {
+        signal?.throwIfAborted();
         const completion = await streamCompletion(
             messages,
             onUpdate,
             liveDataRequired || round > 0,
-            round === 0 && liveDataRequired ? 'required' : 'auto'
+            round === 0 && liveDataRequired ? 'required' : 'auto',
+            signal
         );
+        signal?.throwIfAborted();
         if (!completion.toolCalls.length) {
             if (!completion.content) {
                 throw new Error('NVIDIA NIM returned an empty response.');
@@ -55,7 +59,7 @@ export async function generateNvidiaNimReply(
         messages.push(...await Promise.all(
             completion.toolCalls.map(async toolCall => ({
                 role: 'tool' as const,
-                content: await executeToolCall(toolCall),
+                content: await executeToolCall(toolCall, signal),
                 tool_call_id: toolCall.id,
                 name: toolCall.function.name
             }))

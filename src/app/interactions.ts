@@ -10,7 +10,13 @@ async function dispatchInteraction(client: Client, interaction: Interaction): Pr
     }
     if (!interaction.isChatInputCommand()) return;
     const command = client.commands.get(interaction.commandName);
-    if (!command) { logger.warn(`No command matching ${interaction.commandName} was found; refresh Discord application commands.`); return; }
+    if (!command) {
+        logger.warn(`No command matching ${interaction.commandName} was found; refresh Discord application commands.`);
+        const payload = { content: '此指令已更新，請重新開啟指令選單後再試。', flags: MessageFlags.Ephemeral as const };
+        if (interaction.replied || interaction.deferred) await interaction.followUp(payload);
+        else await interaction.reply(payload);
+        return;
+    }
     await command.execute(interaction);
     logger.info(`execute command: ${command.data.name}, user: ${interaction.user.tag}`);
 }

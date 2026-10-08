@@ -24,6 +24,7 @@ export class MusicSession {
     pauseTimer?: NodeJS.Timeout;
     bufferingTimer?: NodeJS.Timeout;
     loadController?: AbortController;
+    connectionController?: AbortController;
     recovering = false;
     hasConnected = false;
     constructor(readonly channel: VoiceChannel, readonly lease: VoiceLease,

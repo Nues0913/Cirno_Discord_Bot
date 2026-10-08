@@ -1,4 +1,5 @@
 import { lookup } from 'node:dns/promises';
+import type { LookupAddress } from 'node:dns';
 import { request } from 'node:https';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -57,11 +58,11 @@ function decodeHtmlEntities(value: string): string {
     };
 
     return value.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi, (match, entity: string) => {
-        if (entity.startsWith('#x')) {
-            return String.fromCodePoint(Number.parseInt(entity.slice(2), 16));
-        }
         if (entity.startsWith('#')) {
-            return String.fromCodePoint(Number.parseInt(entity.slice(1), 10));
+            const hex = entity.toLowerCase().startsWith('#x');
+            const point = Number.parseInt(entity.slice(hex ? 2 : 1), hex ? 16 : 10);
+            return Number.isInteger(point) && point >= 0 && point <= 0x10ffff
+                && !(point >= 0xd800 && point <= 0xdfff) ? String.fromCodePoint(point) : match;
         }
         return namedEntities[entity.toLowerCase()] ?? match;
     });
@@ -81,7 +82,8 @@ function htmlToText(html: string): string {
         .trim();
 }
 
-async function validateAndResolve(url: URL): Promise<{ address: string; family: number }> {
+async function validateAndResolve(url: URL, signal: AbortSignal): Promise<{ address: string; family: number }> {
+    signal.throwIfAborted();
     if (url.protocol !== 'https:') {
         throw new Error('Only HTTPS URLs are allowed.');
     }
@@ -92,15 +94,22 @@ async function validateAndResolve(url: URL): Promise<{ address: string; family: 
         throw new Error('Only the standard HTTPS port is allowed.');
     }
 
-    const addresses = await lookup(url.hostname, { all: true, verbatim: true });
+    // Native DNS lookup cannot be cancelled, but late results must not start a request.
+    const addresses = await new Promise<LookupAddress[]>((resolve, reject) => {
+        const abort = () => reject(signal.reason);
+        signal.addEventListener('abort', abort, { once: true });
+        lookup(url.hostname, { all: true, verbatim: true }).then(resolve, reject)
+            .finally(() => signal.removeEventListener('abort', abort));
+    });
+    signal.throwIfAborted();
     if (!addresses.length || addresses.some(result => isBlockedAddress(result.address))) {
         throw new Error('The URL resolves to a private, local, or reserved network address.');
     }
     return addresses[0];
 }
 
-async function requestUrl(url: URL, redirectCount = 0): Promise<FetchResult> {
-    const resolved = await validateAndResolve(url);
+async function requestUrl(url: URL, signal: AbortSignal, redirectCount = 0): Promise<FetchResult> {
+    const resolved = await validateAndResolve(url, signal);
     const timeoutMs = getPositiveInteger(process.env.DIRECT_FETCH_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
     const maxBytes = Math.min(
         getPositiveInteger(process.env.DIRECT_FETCH_MAX_BYTES, DEFAULT_MAX_BYTES),
@@ -121,62 +130,68 @@ async function requestUrl(url: URL, redirectCount = 0): Promise<FetchResult> {
                 'Accept-Encoding': 'identity',
                 'User-Agent': 'DiscordBotV4/1.0 (+server-side data fetch)'
             },
-            timeout: timeoutMs
+            timeout: timeoutMs,
+            signal
         }, response => {
-            const status = response.statusCode ?? 0;
-            const location = response.headers.location;
-            if (status >= 300 && status < 400 && location) {
-                response.resume();
-                if (redirectCount >= MAX_REDIRECTS) {
-                    reject(new Error('The URL exceeded the redirect limit.'));
-                    return;
-                }
-                requestUrl(new URL(location, url), redirectCount + 1).then(resolve, reject);
-                return;
-            }
-            if (status < 200 || status >= 300) {
-                response.resume();
-                reject(new Error(`Direct fetch failed (HTTP ${status}).`));
-                return;
-            }
-
-            const contentType = String(response.headers['content-type'] ?? '').toLowerCase();
-            const allowedType = contentType.startsWith('text/')
-                || contentType.includes('json')
-                || contentType.includes('xml');
-            if (!allowedType) {
-                response.resume();
-                reject(new Error(`Unsupported response type: ${contentType || 'unknown'}.`));
-                return;
-            }
-
-            const chunks: Buffer[] = [];
-            let receivedBytes = 0;
-            response.on('data', (chunk: Buffer) => {
-                receivedBytes += chunk.length;
-                if (receivedBytes > maxBytes) {
-                    response.destroy(new Error(`The response exceeded ${maxBytes} bytes.`));
-                    return;
-                }
-                chunks.push(chunk);
-            });
             response.on('error', reject);
-            response.on('end', () => {
-                const rawContent = Buffer.concat(chunks).toString('utf8');
-                const textContent = contentType.includes('html')
-                    ? htmlToText(rawContent)
-                    : rawContent.trim();
-                resolve({
-                    url: url.toString(),
-                    status,
-                    contentType,
-                    date: typeof response.headers.date === 'string' ? response.headers.date : null,
-                    lastModified: typeof response.headers['last-modified'] === 'string'
-                        ? response.headers['last-modified']
-                        : null,
-                    content: textContent.slice(0, 50_000)
+            try {
+                const status = response.statusCode ?? 0;
+                const location = response.headers.location;
+                if (status >= 300 && status < 400 && location) {
+                    response.destroy();
+                    if (redirectCount >= MAX_REDIRECTS) {
+                        reject(new Error('The URL exceeded the redirect limit.'));
+                        return;
+                    }
+                    requestUrl(new URL(location, url), signal, redirectCount + 1).then(resolve, reject);
+                    return;
+                }
+                if (status < 200 || status >= 300) {
+                    response.destroy();
+                    reject(new Error(`Direct fetch failed (HTTP ${status}).`));
+                    return;
+                }
+
+                const contentType = String(response.headers['content-type'] ?? '').toLowerCase();
+                const allowedType = contentType.startsWith('text/')
+                    || contentType.includes('json')
+                    || contentType.includes('xml');
+                if (!allowedType) {
+                    response.destroy();
+                    reject(new Error(`Unsupported response type: ${contentType || 'unknown'}.`));
+                    return;
+                }
+
+                const chunks: Buffer[] = [];
+                let receivedBytes = 0;
+                response.on('data', (chunk: Buffer) => {
+                    receivedBytes += chunk.length;
+                    if (receivedBytes > maxBytes) {
+                        response.destroy(new Error(`The response exceeded ${maxBytes} bytes.`));
+                        return;
+                    }
+                    chunks.push(chunk);
                 });
-            });
+                response.on('end', () => {
+                    try {
+                        signal.throwIfAborted();
+                        const rawContent = Buffer.concat(chunks).toString('utf8');
+                        const textContent = contentType.includes('html')
+                            ? htmlToText(rawContent)
+                            : rawContent.trim();
+                        resolve({
+                            url: url.toString(),
+                            status,
+                            contentType,
+                            date: typeof response.headers.date === 'string' ? response.headers.date : null,
+                            lastModified: typeof response.headers['last-modified'] === 'string'
+                                ? response.headers['last-modified']
+                                : null,
+                            content: textContent.slice(0, 50_000)
+                        });
+                    } catch (error) { reject(error); }
+                });
+            } catch (error) { response.destroy(); reject(error); }
         });
 
         req.on('timeout', () => req.destroy(new Error(`Direct fetch timed out after ${timeoutMs} ms.`)));
@@ -185,7 +200,8 @@ async function requestUrl(url: URL, redirectCount = 0): Promise<FetchResult> {
     });
 }
 
-export async function fetchPublicUrl(rawUrl: string): Promise<string> {
+export async function fetchPublicUrl(rawUrl: string, callerSignal?: AbortSignal): Promise<string> {
+    callerSignal?.throwIfAborted();
     let url: URL;
     try {
         url = new URL(rawUrl);
@@ -194,8 +210,11 @@ export async function fetchPublicUrl(rawUrl: string): Promise<string> {
     }
 
     try {
-        return JSON.stringify(await requestUrl(url));
+        const deadline = AbortSignal.timeout(getPositiveInteger(process.env.DIRECT_FETCH_TIMEOUT_MS, DEFAULT_TIMEOUT_MS));
+        const signal = callerSignal ? AbortSignal.any([callerSignal, deadline]) : deadline;
+        return JSON.stringify(await requestUrl(url, signal));
     } catch (error) {
+        callerSignal?.throwIfAborted();
         return JSON.stringify({
             url: url.toString(),
             error: error instanceof Error ? error.message : 'Direct fetch failed.'

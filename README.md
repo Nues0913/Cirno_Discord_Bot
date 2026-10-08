@@ -187,7 +187,7 @@ NVIDIA_NIM_TIMEOUT_MS=180000
 # 搜尋逾時毫秒數，預設：20000
 WEB_SEARCH_TIMEOUT_MS=20000
 
-# 直接讀取官方網頁/API 的逾時與大小限制
+# 直接讀取官方網頁/API 的整體逾時（含 DNS／redirect／body）與大小限制
 DIRECT_FETCH_TIMEOUT_MS=15000
 DIRECT_FETCH_MAX_BYTES=1000000
 
@@ -215,6 +215,10 @@ NVIDIA_NIM_URL=https://integrate.api.nvidia.com/v1/chat/completions
 
 
 ## 程式架構
+
+停止 Bot 會取消進行中的 AI 模型／工具請求並停止後續回覆；語音初次連線期間也可透過已授權的停止操作立即取消。遠端清單解析會共用相同歌曲的 metadata 查詢並保留重複項目與原順序，每次解析以約 125 ms 間隔啟動新的歌曲查詢；唯讀歌曲 API 遇到 429 最多額外重試兩次，仍受原請求總逾時限制。
+
+`npm run check:production` 在暫存目錄驗證僅安裝 production dependencies 時仍能載入 logger；此檢查略過 FFmpeg 安裝腳本，不代表完整 Discord 啟動測試。網頁擷取的真實 TLS 回歸測試需要 OpenSSL。
 
 模組責任、依賴方向、資源所有權與驗證方式見 [架構說明](docs/architecture.md)。
 

@@ -44,14 +44,18 @@ export class CompletionAccumulator {
     }
 }
 
-export async function readCompletionStream(body: ReadableStream<Uint8Array>, onUpdate?: (content: string) => void) {
+export async function readCompletionStream(body: ReadableStream<Uint8Array>, onUpdate?: (content: string) => void, signal?: AbortSignal) {
     const reader = body.getReader();
+    const abort = () => { void reader.cancel(signal?.reason).catch(() => {}); };
+    signal?.addEventListener('abort', abort, { once: true });
     const decoder = new TextDecoder();
     const accumulator = new CompletionAccumulator(onUpdate);
     let buffer = '';
     try {
         while (true) {
+            signal?.throwIfAborted();
             const { done, value } = await reader.read();
+            signal?.throwIfAborted();
             buffer += decoder.decode(value, { stream: !done });
             if (done) {
                 if (buffer) accumulator.processLine(buffer);
@@ -62,6 +66,7 @@ export async function readCompletionStream(body: ReadableStream<Uint8Array>, onU
             for (const line of lines) if (accumulator.processLine(line)) return accumulator.result();
         }
     } finally {
+        signal?.removeEventListener('abort', abort);
         // [DONE], malformed data and consumer errors all release the underlying stream.
         try { await reader.cancel(); } catch { /* A failed transport may already be closed. */ }
         finally { reader.releaseLock(); }

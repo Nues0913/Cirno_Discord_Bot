@@ -1,6 +1,7 @@
 import type { RemoteTrack } from '../model/track.js';
 import { remoteMusicApiSettings } from '../../../shared/http/musicApi.js';
 import { UserActionError, ConfigurationError } from '../../../shared/logging/operationErrors.js';
+import { setTimeout as delay } from 'node:timers/promises';
 export type { RemoteTrack } from '../model/track.js';
 
 export interface RemotePage { items: RemoteTrack[]; nextCursor?: string; }
@@ -38,8 +39,17 @@ function parseTrack(value: unknown): RemoteTrack {
 async function request(path: string, query?: URLSearchParams, timeoutMs = 8000): Promise<Response> {
     const { token } = remoteMusicApiSettings();
     let response: Response;
+    const signal = AbortSignal.timeout(timeoutMs);
     try {
-        response = await fetch(url(path, query), { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(timeoutMs), redirect: 'error' });
+        for (let attempt = 0; ; attempt++) {
+            response = await fetch(url(path, query), { headers: { Authorization: `Bearer ${token}` }, signal, redirect: 'error' });
+            if (response.status !== 429 || attempt >= 2) break;
+            const retryAfter = response.headers.get('retry-after');
+            const seconds = retryAfter ? Number(retryAfter) : NaN;
+            const requested = Number.isFinite(seconds) ? seconds * 1000 : retryAfter ? Date.parse(retryAfter) - Date.now() : 1000;
+            await response.body?.cancel();
+            await delay(Math.min(3000, Math.max(1000, requested || 1000)), undefined, { signal });
+        }
     } catch {
         throw new Error('無法連線至遠端曲庫。');
     }

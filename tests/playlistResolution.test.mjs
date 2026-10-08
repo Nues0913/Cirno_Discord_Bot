@@ -22,7 +22,11 @@ async function fixture(t) {
     const failure = { status: undefined };
     const server = createServer((request, response) => {
         requests.push(request.url);
-        if (failure.status) { response.writeHead(failure.status).end(); return; }
+        if (failure.status) {
+            response.writeHead(failure.status).end();
+            if (failure.remaining && --failure.remaining === 0) failure.status = undefined;
+            return;
+        }
         if (request.headers.authorization !== 'Bearer resolution-fixture-token') {
             response.writeHead(401).end(); return;
         }
@@ -60,7 +64,7 @@ test('remote-only playlists resolve in order with duplicates without scanning an
     const result = await resolvePlaylist(saved);
     assert.deepEqual(result.tracks.map(track => track.id), [second, first, second]);
     assert.deepEqual(result.unavailable, []);
-    assert.equal(requests.length, 3);
+    assert.equal(requests.length, 2);
     assert.equal(musicLibrary.load.mock.callCount(), 0);
     assert.deepEqual(saved, snapshot);
 });
@@ -73,7 +77,7 @@ test('a failed local scan only marks local entries unavailable while remote fail
     const result = await resolvePlaylist(saved);
     assert.deepEqual(result.tracks.map(track => track.id), [second, first, second]);
     assert.deepEqual(result.unavailable, [local, remote(missing), local]);
-    assert.equal(requests.length, 4);
+    assert.equal(requests.length, 3);
     assert.equal(musicLibrary.load.mock.callCount(), 1);
     assert.equal(musicLibrary.get.mock.callCount(), 0);
     assert.equal(errors.length, 1);
@@ -110,4 +114,23 @@ test('skipping saved remote songs does not hide server failures or remove saved 
     }
     assert.match(errors[0].message, /HTTP 503/);
     assert.match(errors[1].message, /驗證失敗/);
+});
+
+test('100 duplicate references share one metadata query while preserving all entries', async t => {
+    const { requests, remote } = await fixture(t);
+    const saved = Array.from({ length: 100 }, () => remote(first));
+    const result = await resolvePlaylist(saved);
+    assert.equal(result.tracks.length, 100); assert.deepEqual(result.unavailable, []);
+    assert.equal(requests.length, 1);
+});
+
+test('read-only 429 retries recover transient limits and remain bounded for a persistent limit', async t => {
+    const { requests, failure, remote, errors } = await fixture(t);
+    failure.status = 429; failure.remaining = 1;
+    let result = await resolvePlaylist([remote(first)]);
+    assert.equal(result.tracks.length, 1); assert.equal(requests.length, 2);
+    failure.status = 429;
+    result = await resolvePlaylist(Array.from({ length: 100 }, () => remote(first)));
+    assert.equal(result.unavailable.length, 100); assert.equal(requests.length, 5);
+    assert.equal(errors.length, 1); assert.match(errors[0].message, /HTTP 429/);
 });
