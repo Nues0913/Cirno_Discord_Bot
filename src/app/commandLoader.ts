@@ -1,4 +1,5 @@
-import fg from 'fast-glob';
+import { glob, stat } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Collection, REST, Routes, type Client } from 'discord.js';
 import { isBotCommand, type BotCommand } from '../shared/discord/command.js';
@@ -7,7 +8,11 @@ import logger from '../shared/logging/logger.js';
 export async function loadCommands(client: Client, reload = false) {
     const extension = import.meta.url.endsWith('.ts') ? 'ts' : 'js';
     const cwd = fileURLToPath(new URL('../commands/', import.meta.url));
-    const files = await fg(`*/index.${extension}`, { cwd, absolute: true, onlyFiles: true });
+    const files: string[] = [];
+    for await (const file of glob(`*/index.${extension}`, { cwd })) {
+        const path = resolve(cwd, file);
+        if ((await stat(path)).isFile()) files.push(path);
+    }
     const commands = new Collection<string, BotCommand>();
     const reloadKey = String(Date.now());
     for (const file of files.sort()) {
