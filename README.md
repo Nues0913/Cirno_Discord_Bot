@@ -105,24 +105,11 @@ Bot 只會以 Discord interaction 的使用者 ID 呼叫清單 API；Server 驗�
 
 清單保存於 Server 的 SQLite；請備份並持久掛載 Server 的 DB 目錄。本地音檔仍在 Bot 主機，Server 只保存收藏參照，不會將本地音檔上傳。換 Bot 主機或移動本地曲庫後，可能需要重新加入本地收藏。
 
-### 舊資料一次性匯入
-
-若先前已使用 `data/playlists.json`，請先停用舊 Bot 的寫入並備份原檔，啟動新版 Server、設定上述變數後，在 Bot 根目錄執行：
-
-```bash
-npm run build
-node scripts/import-playlists.mjs data/playlists.json
-```
-
-匯入保留使用者、清單 ID、歌曲項目 ID、順序及版本；原 JSON 不會被刪除或覆寫。中途失敗可用同一檔案重跑；已匯入項目不會重複建立，也不會覆蓋之後在 Server 上的編輯。原檔若被修改而與既有匯入內容衝突，工具會停止並回報。確認成功後才重新啟動 Bot 供使用者操作。
-
-`data/playlists.json` 僅是舊資料的匯入來源，新版 Bot 不會使用它執行清單管理。匯入後請以 Server 資料庫為保存及備份依據。
-
 這次包含播放器核心變更，請執行 `npm run build` 並重新啟動 Bot，啟動時會註冊新增的 `/playlist` 及更新後的 `/music`。全球指令更新可能需要等候 Discord 同步；`!reload` 只更新指令模組，不能替代本次重新啟動。
 
-`npm test` 包含後端設定必填及禁止本地清單儲存、個人清單指令互動、佇列與播放器控制，以及真實 FFmpeg 的本地／遠端串流／下載跳轉測試。測試使用暫存資料與本機模擬曲庫，不會登入 Discord 或修改正式曲庫。新增遠端清單用戶端測試涵蓋專用驗證、版本傳送、錯誤不重試、資料隔離及匯入保留原檔。
+`npm test` 包含後端設定必填及禁止本地清單儲存、個人清單指令互動、佇列與播放器控制，以及真實 FFmpeg 的本地／遠端串流／下載跳轉測試。測試使用暫存資料與本機模擬曲庫，不會登入 Discord 或修改正式曲庫。新增遠端清單用戶端測試涵蓋專用驗證、版本傳送、錯誤不重試、資料隔離。
 
-若同時有 `music_server` checkout，先建置 Server 的 `api/` 與 Bot，再於 Bot 根目錄執行 `node scripts/test-playlist-server.mjs ../music_server/api`。它會建立暫存 SQLite、啟動真實 HTTP Server，驗證兩邊的混合清單 CRUD、停用曲目及可重跑匯入，結束後清除暫存資料。
+若同時有 `music_server` checkout，先建置 Server 的 `api/` 與 Bot，再於 Bot 根目錄執行 `node scripts/test-playlist-server.mjs ../music_server/api`。它會建立暫存 SQLite、啟動真實 HTTP Server，驗證兩邊的混合清單 CRUD、停用曲目及資料庫保存，結束後清除暫存資料。
 
 ## 偵測語音頻道福音傳播
 

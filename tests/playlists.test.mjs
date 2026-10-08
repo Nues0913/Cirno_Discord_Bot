@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, rm, readdir } from 'node:fs/promises';
+import { mkdtemp, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { playlists } from '../dist/lib/playlistStore.js';
 
-test('every playlist operation requires the backend, even with legacy JSON present', async t => {
+test('every playlist operation requires the backend without creating local storage', async t => {
     const directory = await mkdtemp(join(tmpdir(), 'cirno-backend-required-'));
     const originalCwd = process.cwd();
     const keys = ['PLAYLIST_API_URL', 'PLAYLIST_API_TOKEN'];
@@ -19,11 +19,6 @@ test('every playlist operation requires the backend, even with legacy JSON prese
         });
         await rm(directory, { recursive: true, force: true });
     });
-    await mkdir(join(directory, 'data'));
-    const file = join(directory, 'data/playlists.json');
-    // An intentionally invalid legacy file also proves it is never read by CRUD.
-    const legacy = '{legacy file must not be read or overwritten';
-    await writeFile(file, legacy);
     process.chdir(directory);
     const owner = '123456789012345678', id = randomUUID(), entryId = randomUUID();
     const operations = [
@@ -38,6 +33,5 @@ test('every playlist operation requires the backend, even with legacy JSON prese
         });
         for (const operation of operations) await assert.rejects(operation, /請設定 PLAYLIST_API_URL/);
     }
-    assert.equal(await readFile(file, 'utf8'), legacy);
-    assert.deepEqual(await readdir(join(directory, 'data')), ['playlists.json']);
+    assert.deepEqual(await readdir(directory), []);
 });

@@ -81,8 +81,4 @@ export class RemotePlaylistStore {
         const { revision } = await this.get(owner, id);
         return validate(await this.request(owner, 'PATCH', `/${this.id(id)}/entries/${this.id(entryId)}`, { revision, position }), owner, id);
     }
-    async import(playlist: Playlist): Promise<Playlist> {
-        const { id, ownerId, name, revision, entries } = playlist;
-        return validate(await this.request(ownerId, 'PUT', `/${this.id(id)}/import`, { name, revision, entries }), ownerId, id);
-    }
 }

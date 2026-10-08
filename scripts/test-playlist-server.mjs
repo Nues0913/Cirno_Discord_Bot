@@ -2,17 +2,16 @@
 // Build both projects first, then: node scripts/test-playlist-server.mjs ../music_server/api
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { playlists } from '../dist/lib/playlistStore.js';
 import { RemotePlaylistStore } from '../dist/lib/remotePlaylistStore.js';
 import { saveTrack, resolvePlaylist } from '../dist/lib/playlistTracks.js';
 import { musicLibrary } from '../dist/lib/localMusicLibrary.js';
 import { getRemoteSong } from '../dist/lib/remoteMusicLibrary.js';
-import { importPlaylists } from './import-playlists.mjs';
 
 const api = resolve(process.argv[2] ?? '../music_server/api');
 const { buildApp } = await import(pathToFileURL(join(api, 'dist/app.js')).href);
@@ -65,21 +64,13 @@ try {
     await db.song.update({ where: { id: remote.id }, data: { status: 'disabled' } });
     const unavailable = await resolvePlaylist((await playlists.get(user, p.id)).entries);
     assert.equal(unavailable.tracks.length, 1); assert.equal(unavailable.unavailable.length, 1);
-    const legacy = { ...p, id: randomUUID(), name: 'Legacy', entries: p.entries.map(e => ({ ...e, entryId: randomUUID() })) };
-    const file = join(root, 'playlists.json'), source = JSON.stringify({ version: 1, playlists: [legacy] });
-    await writeFile(file, source);
-    assert.equal(await importPlaylists(file), 1);
-    await playlists.rename(user, legacy.id, 'Edited after import');
-    assert.equal(await importPlaylists(file), 1);
-    assert.equal((await playlists.get(user, legacy.id)).name, 'Edited after import');
-    assert.equal(await readFile(file, 'utf8'), source);
     const independentClient = new RemotePlaylistStore();
-    assert.equal((await independentClient.list(user)).length, 2);
+    assert.equal((await independentClient.list(user)).length, 1);
     await playlists.delete(user, p.id, p.revision);
     assert.equal(await db.playlist.count({ where: { id: p.id } }), 0);
     assert.equal(await db.playlistEntry.count({ where: { playlistId: p.id } }), 0);
-    assert.equal((await independentClient.list(user)).length, 1);
-    console.log('PASS: real HTTP + SQLite; mixed playlist CRUD, owner isolation, dedicated auth, disabled songs, idempotent legacy import and independent clients.');
+    assert.equal((await independentClient.list(user)).length, 0);
+    console.log('PASS: real HTTP + SQLite; mixed playlist CRUD, owner isolation, dedicated auth, disabled songs, database persistence and independent clients.');
 } finally {
     if (app) await app.close();
     if (db) await db.$disconnect();
