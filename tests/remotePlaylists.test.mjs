@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { RemotePlaylistStore } from '../dist/lib/remotePlaylistStore.js';
-import { playlists } from '../dist/lib/playlistStore.js';
+import { RemotePlaylistStore } from '../dist/features/playlists/remoteStore.js';
+import { playlists } from '../dist/features/playlists/store.js';
 const owner = '123456789012345678';
 async function server(t, handler) {
     const instance = createServer(async (request, response) => {
@@ -65,4 +65,23 @@ test('rejects wrong-owner data and redirects, keeping credential off redirect de
     });
     await assert.rejects(playlists.list(owner), /無效資料/);
     mode = 'redirect'; await assert.rejects(playlists.list(owner), /無法連線/);
+});
+
+test('writes send the revision read by the caller without fetching a newer version or retrying conflicts', async t => {
+    const p = { id: randomUUID(), ownerId: owner, name: 'snapshot', revision: 7, entries: [] };
+    const calls = []; let conflict = false;
+    await server(t, (req, res, body) => {
+        calls.push({ method: req.method, body });
+        if (conflict) res.writeHead(409, { 'content-type': 'application/json' }).end(JSON.stringify({ error: '清單已更新' }));
+        else res.end(JSON.stringify(p));
+    });
+    const store = new RemotePlaylistStore();
+    await store.rename(owner, p.id, 'new', 6);
+    await store.add(owner, p.id, [], 6);
+    await store.remove(owner, p.id, randomUUID(), 6);
+    await store.move(owner, p.id, randomUUID(), 1, 6);
+    assert.equal(calls.length, 4);
+    assert.ok(calls.every(call => call.method !== 'GET' && call.body.revision === 6));
+    conflict = true; await assert.rejects(store.rename(owner, p.id, 'stale', 6), /已更新/);
+    assert.equal(calls.length, 5);
 });

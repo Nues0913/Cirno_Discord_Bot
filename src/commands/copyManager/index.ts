@@ -1,3 +1,4 @@
+import type { Interaction } from 'discord.js';
 import {
     ActionRowBuilder,
     ChatInputCommandInteraction,
@@ -8,8 +9,8 @@ import {
     TextInputBuilder,
     TextInputStyle
 } from 'discord.js';
-import { add, remove, getAll, count } from '../../lib/db.js';
-import logger from '../../lib/logger.js';
+import { add, remove, getAll } from '../../features/copyessay/store.js';
+import logger from '../../shared/logging/logger.js';
 
 const data = new SlashCommandBuilder()
     .setName('copymanager')
@@ -106,3 +107,9 @@ async function handleModal(interaction: ModalSubmitInteraction) {
 }
 
 export { data, execute, handleModal };
+
+export async function handleInteraction(interaction: Interaction): Promise<boolean> {
+    if (!interaction.isModalSubmit() || interaction.customId !== 'copymanager:add') return false;
+    await handleModal(interaction);
+    return true;
+}

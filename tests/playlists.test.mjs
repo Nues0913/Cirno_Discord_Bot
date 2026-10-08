@@ -4,7 +4,7 @@ import { mkdtemp, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { playlists } from '../dist/lib/playlistStore.js';
+import { playlists } from '../dist/features/playlists/store.js';
 
 test('every playlist operation requires the backend without creating local storage', async t => {
     const directory = await mkdtemp(join(tmpdir(), 'cirno-backend-required-'));

@@ -210,3 +210,8 @@ NVIDIA_NIM_SYSTEM_PROMPT=You are a helpful Discord assistant.
 # 若使用自行部署的 NIM，可覆寫 API URL
 NVIDIA_NIM_URL=https://integrate.api.nvidia.com/v1/chat/completions
 ```
+
+
+## 程式架構
+
+模組責任、依賴方向、資源所有權與驗證方式見 [架構說明](docs/architecture.md)。

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MusicQueue, GuildTasks } from '../dist/lib/musicQueue.js';
+import { MusicQueue } from '../dist/features/music/model/queue.js';
+import { GuildTasks } from '../dist/shared/async/guildTasks.js';
 const entry = (id, source = 'local') => ({ track: { id, title: id, ...(source === 'remote' ? { source } : { filename: id }) }, requestedBy: 'listener' });
 function queue() { const q = new MusicQueue(); q.addMany(['a', 'b', 'c'].map(id => entry(id))); q.advance('finished'); return q; }
 test('single repeat repeats completion, but next always skips', () => {

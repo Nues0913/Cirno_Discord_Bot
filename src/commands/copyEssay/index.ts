@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, ChatInputCommandInteraction, MessageFlags } from 'discord.js';
-import { getRandom, search, getById } from '../../lib/db.js';
-import logger from '../../lib/logger.js';
+import { getRandom, search, getById } from '../../features/copyessay/store.js';
+import logger from '../../shared/logging/logger.js';
 
 const data = new SlashCommandBuilder()
     .setName('copyessay')

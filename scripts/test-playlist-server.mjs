@@ -7,15 +7,15 @@ import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
-import { playlists } from '../dist/lib/playlistStore.js';
-import { RemotePlaylistStore } from '../dist/lib/remotePlaylistStore.js';
-import { saveTrack, resolvePlaylist } from '../dist/lib/playlistTracks.js';
-import { musicLibrary } from '../dist/lib/localMusicLibrary.js';
-import { getRemoteSong } from '../dist/lib/remoteMusicLibrary.js';
+import { playlists } from '../dist/features/playlists/store.js';
+import { RemotePlaylistStore } from '../dist/features/playlists/remoteStore.js';
+import { saveTrack, resolvePlaylist } from '../dist/features/playlists/tracks.js';
+import { musicLibrary } from '../dist/features/music/library/localLibrary.js';
+import { getRemoteSong } from '../dist/features/music/library/remoteLibrary.js';
 
 const api = resolve(process.argv[2] ?? '../music_server/api');
 const { buildApp } = await import(pathToFileURL(join(api, 'dist/app.js')).href);
-const { connectDatabase } = await import(pathToFileURL(join(api, 'dist/db.js')).href);
+const { connectDatabase } = await import(pathToFileURL(join(api, 'dist/infrastructure/database.js')).href);
 const root = await mkdtemp(join(tmpdir(), 'music-playlist-integration-'));
 let db, app;
 try {

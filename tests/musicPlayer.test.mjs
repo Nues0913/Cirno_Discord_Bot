@@ -1,12 +1,14 @@
+import { MusicSession } from '../dist/features/music/playback/session.js';
+import { MusicPanel } from '../dist/features/music/presentation/panel.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MusicPlayer, MusicSession } from '../dist/lib/localMusicPlayer.js';
-import { VoiceSessionManager } from '../dist/lib/voiceSessionManager.js';
-import { renderMusicPanel } from '../dist/lib/musicPanel.js';
+import { MusicPlayer } from '../dist/features/music/playback/player.js';
+import { VoiceSessionManager } from '../dist/features/voice/sessionManager.js';
+import { renderMusicPanel } from '../dist/features/music/presentation/panel.js';
 function fixture(t) {
     const player = new MusicPlayer();
     const channel = { id: 'voice', guild: { id: 'guild', voiceStates: { cache: new Map([['listener', { channelId: 'voice' }], ['outsider', { channelId: 'other' }]]) } } };
-    const session = new MusicSession(channel, new VoiceSessionManager().acquire('guild', 'music'));
+    const session = new MusicSession(channel, new VoiceSessionManager().acquire('guild', 'music'), view => new MusicPanel(view, () => {}));
     session.status = 'playing';
     session.queue.addMany(['a', 'b', 'c'].map(id => ({ track: { id, title: id, duration: 120 }, requestedBy: 'listener' })));
     session.queue.advance('finished');
@@ -15,7 +17,7 @@ function fixture(t) {
     session.player = { pause: () => true, unpause: () => true, stop: () => {}, removeAllListeners: () => {} };
     player.sessions.set('guild', session);
     const plays = [];
-    player.playCurrent = async (s, offset = 0, paused = false) => { plays.push({ id: s.queue.current.track.id, offset, paused }); s.offset = offset; s.generation++; };
+    player.playback.playCurrent = async (s, offset = 0, paused = false) => { plays.push({ id: s.queue.current.track.id, offset, paused }); s.offset = offset; s.generation++; };
     t.after(() => session.clearAudio());
     return { player, session, plays };
 }

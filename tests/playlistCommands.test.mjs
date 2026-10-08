@@ -2,10 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { ChannelType, MessageFlags } from 'discord.js';
-import { playlists } from '../dist/lib/playlistStore.js';
+import { playlists } from '../dist/features/playlists/store.js';
 import { data, execute, handlePlaylistInteraction } from '../dist/commands/playlist/index.js';
-import { musicLibrary } from '../dist/lib/localMusicLibrary.js';
-import { musicPlayer } from '../dist/lib/localMusicPlayer.js';
+import { musicLibrary } from '../dist/features/music/library/localLibrary.js';
+import { musicPlayer } from '../dist/features/music/playback/player.js';
 import { data as musicData } from '../dist/commands/music/index.js';
 const owner = '123456789012345678';
 // Stub API responses for interaction unit tests; persistence is tested by Server
@@ -121,4 +121,23 @@ test('playlist play resolves songs, reports unavailable entries and shuffles onl
     assert.equal(queued[5], true);
     assert.match(play.replies[0].content, /1 首暫時無法取得/);
     assert.deepEqual((await store.get(owner, p.id)).entries.map(e => e.id), ['a', 'b', 'missing']);
+});
+
+test('mutation commands retain the version from their initial read and surface a concurrent edit', async t => {
+    const p = { id: randomUUID(), ownerId: owner, name: 'snapshot', revision: 17, entries: [] };
+    let reads = 0;
+    t.mock.method(playlists, 'get', async () => { reads++; return structuredClone(p); });
+    t.mock.method(musicPlayer, 'get', () => ({ queue: { current: { track: { id: 'song', title: 'song' } } } }));
+    for (const method of ['rename', 'remove', 'move', 'add']) {
+        t.mock.method(playlists, method, async (...args) => {
+            assert.equal(args.at(-1), 17);
+            throw Error('清單已更新，請重新讀取後操作。');
+        });
+    }
+    for (const sub of ['rename', 'remove', 'move', 'add-current']) {
+        const interaction = command(sub, { playlist: p.id, name: 'new', entry: randomUUID(), position: 1 });
+        await execute(interaction);
+        assert.match(interaction.replies[0].content, /清單已更新/);
+    }
+    assert.equal(reads, 4);
 });

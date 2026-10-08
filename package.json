@@ -6,9 +6,11 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc && mkdir -p dist/lib && cp src/lib/logger.js dist/lib/logger.js",
+    "build": "rm -rf dist && tsc && mkdir -p dist/shared/logging && cp src/shared/logging/logger.js dist/shared/logging/logger.js",
     "start": "node .",
-    "test": "npm run build && node --experimental-test-module-mocks --test tests/*.test.mjs"
+    "test": "npm run build && node --experimental-test-module-mocks --test tests/*.test.mjs",
+    "check:architecture": "node scripts/check-architecture.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",

@@ -7,10 +7,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import ffmpeg from 'ffmpeg-static';
-import { createLocalAudio } from '../dist/lib/localAudio.js';
-import { createRemoteStreamAudio, createRemoteDownloadedAudio } from '../dist/lib/remoteAudio.js';
-import { musicLibrary } from '../dist/lib/localMusicLibrary.js';
-import { saveTrack, resolvePlaylist } from '../dist/lib/playlistTracks.js';
+import { createLocalAudio } from '../dist/features/music/audio/localAudio.js';
+import { createRemoteStreamAudio, createRemoteDownloadedAudio } from '../dist/features/music/audio/remoteAudio.js';
+import { musicLibrary } from '../dist/features/music/library/localLibrary.js';
+import { saveTrack, resolvePlaylist } from '../dist/features/playlists/tracks.js';
 
 async function consume(factory) {
     let error;
