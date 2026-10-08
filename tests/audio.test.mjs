@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, mkdir } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -65,4 +65,37 @@ test('real FFmpeg seeks local, remote-stream and verified remote-download audio;
     const before = requests.length;
     const wrongLibrary = await resolvePlaylist([{ ...savedRemote, library: 'https://another-library.example/' }]);
     assert.equal(wrongLibrary.tracks.length, 0); assert.equal(requests.length, before);
+});
+
+test('stream mode plays and seeks non-faststart M4A through a verified temporary download', { timeout: 20000 }, async t => {
+    const directory = await mkdtemp(join(tmpdir(), 'cirno-m4a-test-'));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const path = join(directory, 'test.m4a');
+    const generated = spawnSync(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=15',
+        '-c:a', 'aac', '-b:a', '128k', '-y', path]);
+    assert.equal(generated.status, 0, generated.stderr.toString());
+    const bytes = await readFile(path);
+    assert.ok(bytes.length > 65536);
+    assert.ok(bytes.indexOf(Buffer.from('moov')) > bytes.indexOf(Buffer.from('mdat')), 'fixture must require seeking back to audio');
+    const track = { source: 'remote', id: '00000000-0000-4000-8000-000000000002', title: 'M4A fixture',
+        duration: 15, mimeType: 'audio/mp4', byteSize: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
+    const server = createServer((req, res) => {
+        assert.equal(req.headers.authorization, 'Bearer m4a-fixture-token');
+        res.writeHead(200, { 'content-type': 'audio/mp4', 'content-length': String(bytes.length) }); res.end(bytes);
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    t.after(() => { server.closeAllConnections(); return new Promise(resolve => server.close(resolve)); });
+    process.env.REMOTE_MUSIC_API_URL = `http://127.0.0.1:${server.address().port}/`;
+    process.env.REMOTE_MUSIC_API_TOKEN = 'm4a-fixture-token';
+    const cache = join(directory, 'cache');
+    process.env.REMOTE_MUSIC_CACHE_DIRECTORY = cache;
+    for (const offset of [0, 5]) {
+        const localFrames = await consume(error => createLocalAudio(path, 70, error, offset));
+        const streamFrames = await consume(error => createRemoteStreamAudio(track, 70, error, new AbortController(), offset));
+        assert.ok(Math.abs(localFrames - streamFrames) <= 1, `${localFrames} vs ${streamFrames} at ${offset}s`);
+    }
+    await assert.rejects(createRemoteStreamAudio({ ...track, sha256: '0'.repeat(64) }, 70, () => {}, new AbortController()), /雜湊/);
+    // Disposal removes the complete file asynchronously; the failed verification also cleans its part.
+    for (let retry = 0; retry < 100 && (await readdir(cache)).length; retry++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.deepEqual(await readdir(cache), []);
 });

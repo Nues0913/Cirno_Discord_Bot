@@ -21,12 +21,13 @@ function checkHeaders(response: Response, track: RemoteTrack): void {
     if (length !== null && Number(length) !== track.byteSize) throw new Error('遠端音檔大小與曲庫資料不一致。');
 }
 
-function meter(track: RemoteTrack, hash?: ReturnType<typeof createHash>): Transform {
+function meter(track: RemoteTrack, hash?: ReturnType<typeof createHash>, onProgress?: () => void): Transform {
     let bytes = 0;
     return new Transform({
         transform(chunk: Buffer, _encoding, callback) {
             bytes += chunk.length;
             if (bytes > track.byteSize) return callback(new Error('遠端音檔超過預期大小。'));
+            if (chunk.length) onProgress?.();
             hash?.update(chunk);
             callback(null, chunk);
         },
@@ -73,6 +74,11 @@ function decodedAudioBuffer(): Transform {
 export async function createRemoteStreamAudio(
     track: RemoteTrack, volume: number, onError: (error: Error) => void, loadController: AbortController, offset = 0
 ): Promise<AudioOutput> {
+    // MP4 containers may store their index at EOF and require a seekable input.
+    // Download and verify M4A even in stream mode, rather than silently decoding no audio.
+    if (['audio/mp4', 'audio/x-m4a', 'audio/m4a'].includes(track.mimeType.split(';')[0].trim().toLowerCase())) {
+        return createRemoteDownloadedAudio(track, volume, onError, loadController, offset);
+    }
     const response = await openRemoteAudio(track.id, loadController);
     try { checkHeaders(response, track); }
     catch (error) { await response.body?.cancel(); throw error; }
@@ -119,15 +125,23 @@ export async function createRemoteDownloadedAudio(
     await mkdir(directory, { recursive: true });
     const part = resolve(directory, `${randomUUID()}.part`);
     const complete = `${part}.audio`;
+    const timeoutError = new Error('遠端音檔下載逾時（15 秒沒有接收資料）。');
+    let idleTimer: NodeJS.Timeout | undefined;
+    const progress = () => {
+        if (idleTimer) idleTimer.refresh();
+        else idleTimer = setTimeout(() => loadController.abort(timeoutError), 15_000).unref();
+    };
     try {
         const response = await openRemoteAudio(track.id, loadController);
         checkHeaders(response, track);
+        progress();
         await pipeline(
             Readable.fromWeb(response.body as import('node:stream/web').ReadableStream),
-            meter(track, createHash('sha256')),
+            meter(track, createHash('sha256'), progress),
             createWriteStream(part, { flags: 'wx' }),
             { signal: loadController.signal }
         );
+        clearTimeout(idleTimer); idleTimer = undefined;
         if (loadController.signal.aborted) throw new Error('下載已取消。');
         await rename(part, complete);
         const audio = createLocalAudio(complete, volume, onError, offset);
@@ -135,6 +149,6 @@ export async function createRemoteDownloadedAudio(
     } catch (error) {
         loadController.abort();
         await Promise.all([rm(part, { force: true }), rm(complete, { force: true })]);
-        throw error;
-    }
+        throw loadController.signal.reason === timeoutError ? timeoutError : error;
+    } finally { clearTimeout(idleTimer); }
 }

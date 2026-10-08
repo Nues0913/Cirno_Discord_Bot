@@ -138,7 +138,7 @@ REMOTE_MUSIC_BUFFER_SECONDS=3
 
 使用 `/music library source:remote` 瀏覽遠端曲庫；使用 `/music play source:remote song:歌曲` 搜尋並點播。輸入歌曲前先選擇 `source:remote`，自動完成才會顯示遠端結果。未選來源時維持本地曲庫。本地與遠端歌曲可加入同一佇列，共用面板與控制規則；面板的「選歌」按鈕會開啟目前歌曲所屬的曲庫。
 
-`REMOTE_MUSIC_MODE=stream`（預設）會邊接收邊播放，不將整首歌存到 Bot 主機。串流模式預設先緩衝約 3 秒解碼後的音訊再開始播放，可用 `REMOTE_MUSIC_BUFFER_SECONDS` 設為 0–10 秒；設大會增加開始播放的等待時間與每條串流的記憶體用量，對持續低於播放速度的網路無法補救。`download` 會先下載並驗證整首音檔，再從暫存檔播放，結束後刪除。下載模式的暫存目錄預設為 `data/remote-music-cache/`，可用 `REMOTE_MUSIC_CACHE_DIRECTORY` 修改。`/music reload` 只重掃本地曲庫；遠端歌曲在 `music_server` 匯入或停用後由 API 即時反映。
+`REMOTE_MUSIC_MODE=stream`（預設）會邊接收邊播放。M4A（MP4 容器）可能需要回頭讀取檔案，因此即使選擇串流模式，也會自動下載並驗證整首音檔後播放；其他格式不將整首歌存到 Bot 主機。串流模式預設先緩衝約 3 秒解碼後的音訊再開始播放，可用 `REMOTE_MUSIC_BUFFER_SECONDS` 設為 0–10 秒；設大會增加開始播放的等待時間與每條串流的記憶體用量，對持續低於播放速度的網路無法補救。`download` 會先下載並驗證整首音檔，再從暫存檔播放，結束後刪除。下載及 M4A 自動下載使用的暫存目錄預設為 `data/remote-music-cache/`，可用 `REMOTE_MUSIC_CACHE_DIRECTORY` 修改，需預留音檔大小的磁碟空間。下載若連續 15 秒未收到資料，會取消並清理暫存；持續有進度的下載不受 15 秒總時長限制。`/music reload` 只重掃本地曲庫；遠端歌曲在 `music_server` 匯入或停用後由 API 即時反映。
 
 
 ## 複製文管理
