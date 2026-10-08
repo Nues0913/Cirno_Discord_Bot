@@ -69,6 +69,12 @@ test('song and playlist clients reject the same invalid backend URLs before send
     }
     assert.equal(calls, 0);
 });
+test('missing playlist API routes and missing owned records produce distinct guidance', async t => {
+    await server(t, (_req, res) => res.writeHead(404, { 'content-type': 'application/json' }).end('{}'));
+    await assert.rejects(playlists.list(owner), /清單 API 路由不存在.*HTTP 404/);
+    await assert.rejects(playlists.create(owner, 'new'), /重新建置/);
+    await assert.rejects(playlists.get(owner, randomUUID()), /找不到你的清單或項目/);
+});
 test('rejects wrong-owner data and redirects, keeping credential off redirect destinations', async t => {
     let mode = 'owner';
     await server(t, (_req, res) => {

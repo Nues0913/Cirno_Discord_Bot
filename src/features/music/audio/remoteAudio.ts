@@ -21,13 +21,13 @@ function checkHeaders(response: Response, track: RemoteTrack): void {
     if (length !== null && Number(length) !== track.byteSize) throw new Error('遠端音檔大小與曲庫資料不一致。');
 }
 
-function meter(track: RemoteTrack, hash?: ReturnType<typeof createHash>, onProgress?: () => void): Transform {
+function meter(track: RemoteTrack, hash?: ReturnType<typeof createHash>, onProgress?: (bytes: number) => void): Transform {
     let bytes = 0;
     return new Transform({
         transform(chunk: Buffer, _encoding, callback) {
             bytes += chunk.length;
+            if (chunk.length) onProgress?.(bytes);
             if (bytes > track.byteSize) return callback(new Error('遠端音檔超過預期大小。'));
-            if (chunk.length) onProgress?.();
             hash?.update(chunk);
             callback(null, chunk);
         },
@@ -93,17 +93,31 @@ export async function createRemoteStreamAudio(
         '-vn', '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1'
     ], { stdio: ['pipe', 'pipe', 'pipe'] });
     let disposed = false;
+    let reportedError = false;
+    let receivedBytes = 0;
+    const reportError = (error: Error) => {
+        if (disposed || reportedError) return;
+        reportedError = true;
+        onError(error);
+    };
     let errorTail = '';
     child.stderr.on('data', data => { errorTail = (errorTail + String(data)).slice(-1000); });
-    child.on('error', error => { if (!disposed) onError(error); });
+    child.on('error', reportError);
     child.on('close', code => {
-        if (!disposed && code !== 0) onError(new Error(`FFmpeg exited ${code}: ${errorTail}`));
+        if (code !== 0) reportError(new Error(`FFmpeg exited ${code}: ${errorTail}`));
     });
     child.stdout.pipe(buffered);
     const resource = createAudioResource(buffered, { inputType: StreamType.Raw, inlineVolume: true });
     resource.volume?.setVolume(volume / 100);
-    void pipeline(Readable.fromWeb(response.body as import('node:stream/web').ReadableStream), meter(track, createHash('sha256')), child.stdin)
-        .catch(error => { if (!disposed) onError(error instanceof Error ? error : new Error(String(error))); });
+    void pipeline(Readable.fromWeb(response.body as import('node:stream/web').ReadableStream),
+        meter(track, createHash('sha256'), bytes => { receivedBytes = bytes; }), child.stdin)
+        .catch(error => {
+            const failure = error instanceof Error ? error : new Error(String(error));
+            const causeCode = (failure.cause as { code?: unknown } | undefined)?.code
+                ?? (failure as Error & { code?: unknown }).code;
+            const code = typeof causeCode === 'string' && /^[A-Z0-9_]{1,64}$/.test(causeCode) ? `；${causeCode}` : '';
+            reportError(new Error(`遠端音檔串流失敗（歌曲 ${track.id}；已接收 ${receivedBytes}/${track.byteSize} bytes${code}）：${failure.message}`, { cause: failure }));
+        });
     return {
         resource,
         dispose() {
