@@ -23,6 +23,7 @@ export class StreamingReply {
     async complete(answer: string): Promise<void> {
         await this.edits;
         const chunks = splitDiscordMessage(answer);
+        if (!chunks.length) throw new Error('NVIDIA NIM returned an empty response.');
         await this.response.edit({ content: chunks[0], allowedMentions: { parse: [] } });
         const channel = this.source.channel;
         if (!channel.isSendable()) return;

@@ -63,11 +63,18 @@ try {
     assert.equal(unavailable.tracks.length, 1); assert.equal(unavailable.unavailable.length, 1);
     const independentClient = new RemotePlaylistStore();
     assert.equal((await independentClient.list(user)).length, 1);
+    // A returned Int32 maximum must remain readable and deletable through the Bot client.
+    const maximumRevision = 2_147_483_647;
+    await db.playlist.update({ where: { id: p.id }, data: { revision: maximumRevision - 1 } });
+    p = await playlists.rename(user, p.id, '版本上限', maximumRevision - 1);
+    assert.equal(p.revision, maximumRevision);
+    await assert.rejects(playlists.rename(user, p.id, '不可溢位', p.revision), /版本已達上限/);
+    assert.deepEqual(await independentClient.get(user, p.id), p);
     await playlists.delete(user, p.id, p.revision);
     assert.equal(await db.playlist.count({ where: { id: p.id } }), 0);
     assert.equal(await db.playlistEntry.count({ where: { playlistId: p.id } }), 0);
     assert.equal((await independentClient.list(user)).length, 0);
-    console.log('PASS: real HTTP + SQLite; mixed playlist CRUD, owner isolation, shared auth, disabled songs, database persistence and independent clients.');
+    console.log('PASS: real HTTP + SQLite; mixed playlist CRUD, owner isolation, shared auth, disabled songs, database persistence, independent clients and maximum-revision deletion.');
 } finally {
     if (app) await app.close();
     if (db) await db.$disconnect();

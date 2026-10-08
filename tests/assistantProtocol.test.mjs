@@ -49,3 +49,27 @@ test('final Discord answer waits for queued edits and splits messages without me
     assert.equal(rendered.at(-1).content.length, 2000); assert.equal(sent[0].content.length, 100);
     assert.deepEqual(sent[0].allowedMentions, { parse: [] });
 });
+
+test('empty or whitespace-only final answers are rejected without editing or sending an empty message', async () => {
+    for (const answer of ['', ' \n\t ', '\u3000']) {
+        const edits = [], sent = [];
+        const response = { async edit(payload) { edits.push(payload); } };
+        const source = { channel: { isSendable: () => true, async send(payload) { sent.push(payload); } } };
+        await assert.rejects(new StreamingReply(source, response).complete(answer), /empty response/);
+        assert.deepEqual(edits, []); assert.deepEqual(sent, []);
+    }
+});
+
+test('an empty final answer after partial edits can use the normal interruption notice', async () => {
+    const rendered = [], sent = [];
+    const response = { async edit(payload) { rendered.push(payload); } };
+    const source = { channel: { isSendable: () => true, async send(payload) { sent.push(payload); } } };
+    const reply = new StreamingReply(source, response);
+    reply.update('partial response');
+    await assert.rejects(reply.complete(' \n '), /empty response/);
+    assert.deepEqual(rendered.map(payload => payload.content), ['partial response']);
+    await reply.fail();
+    assert.match(rendered.at(-1).content, /^partial response[\s\S]*回覆中斷/);
+    assert.ok(rendered.every(payload => typeof payload.content === 'string' && payload.content.trim()));
+    assert.deepEqual(sent, []);
+});
